@@ -1,0 +1,22 @@
+# Build output and emulator state
+build/
+build.log
+nvram/
+snap/
+pl_l.txt
+*.orig
+*.rej
+
+# Apple IIgs ROM images: not redistributable
+roms/
+
+# The Calypsi toolchain: install it separately (see TECHNICAL.md)
+tools/calypsi/
+tools/*.pkg
+
+# Local agent files
+.claude/
+CLAUDE.md
+.dev/
+__pycache__/
+*.pyc
