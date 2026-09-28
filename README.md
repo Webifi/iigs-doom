@@ -1,6 +1,6 @@
 # Can it play Doom?
 
-It's a question that's nagged at me since before I said goodbye to my trusty IIgs over 30 years ago. It was decked out with a whopping 8 MB RAM and 12.5 MHz ZipGS. With the GS turning 40, I figured it was time to finally try answering it.
+It's a question that's nagged at me since before I said goodbye to my trusty Apple IIgs over 30 years ago. (It was decked out with a whopping 8 MB RAM and 12.5 MHz ZipGS.) With the GS turning 40, I figured it was time to finally try answering it.
 
 ![Doom on the Apple IIgs: a fight in Hangar at full view](docs/images/gameplay.png)
 

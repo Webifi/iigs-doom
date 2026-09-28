@@ -1,4 +1,4 @@
-;;; The finale in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The finale in 65816 assembly.
 ;;;
 ;;; f_finale.c and f_lib.c with the same results: the end text of
 ;;; episode 1 comes out letter by letter over a tiled flat (faster with

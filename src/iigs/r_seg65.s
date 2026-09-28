@@ -1,5 +1,4 @@
-;;; Wall column loop and sprite posts in 65816 assembly, Doom8088: Apple
-;;; IIgs Edition.
+;;; Wall column loop and sprite posts in 65816 assembly.
 ;;;
 ;;; R_RenderSegLoop, R_DrawSegTextureColumn and R_DrawVisSprite of
 ;;; r_draw.c. Walls, floors, ceilings and sprite posts become records in

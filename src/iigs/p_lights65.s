@@ -1,4 +1,4 @@
-;;; Sector lights in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Sector lights in 65816 assembly.
 ;;;
 ;;; p_lights.c with the same results: the flash, strobe and glow
 ;;; thinkers, their spawn functions, P_FindMinSurroundingLight and

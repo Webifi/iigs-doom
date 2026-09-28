@@ -1,4 +1,4 @@
-;;; Random numbers in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Random numbers in 65816 assembly.
 ;;;
 ;;; P_Random, M_Random and M_ClearRandom of m_random.c, with the
 ;;; same table and results.

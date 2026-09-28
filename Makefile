@@ -1,4 +1,4 @@
-# Doom8088: Apple IIgs Edition
+# Builds the game and the disk images (see BUILD.md).
 
 CALYPSI  := tools/calypsi/bin
 AS       := $(CALYPSI)/as65816
@@ -35,7 +35,7 @@ IIGS_S   := src/iigs/crt0.s src/iigs/iigs_asm.s src/iigs/irq65.s src/iigs/m_fixe
             src/iigs/i_doc65.s src/iigs/i_snd65.s src/iigs/m_config65.s \
             src/iigs/cal_integer.s src/iigs/w_level65.s
 
-OBJS     := $(patsubst src/iigs/%.s,$(OBJ)/%.o,$(IIGS_S)) $(OBJ)/drawcol.o
+OBJS     := $(patsubst src/iigs/%.s,$(OBJ)/%.o,$(IIGS_S)) $(OBJ)/drawcol.o $(OBJ)/endtext.o
 
 WAD      := data/DOOM1.WAD
 WADOUT   := $(BUILD)/wad
@@ -97,6 +97,14 @@ $(BUILD)/gen/drawcol.s: tools/gendraw.py Makefile $(DEFSTAMP)
 
 $(OBJ)/drawcol.o: $(BUILD)/gen/drawcol.s src/iigs/lists.inc | $(OBJ)
 	$(AS) $(ASFLAGS) -I src/iigs -o $@ $<
+
+# The ENDOOM page of the exit, as 80-column text
+$(BUILD)/gen/endtext.s: $(WAD) tools/endtext.py
+	mkdir -p $(BUILD)/gen
+	$(PYTHON) tools/endtext.py $(WAD) $@
+
+$(OBJ)/endtext.o: $(BUILD)/gen/endtext.s | $(OBJ)
+	$(AS) $(ASFLAGS) -o $@ $<
 
 # The addresses of the data (src/iigs/memmap.inc): the resident WAD MM_WAD,
 # the sound bank MM_SNDBANK, LOGTAB, SINE, the title MM_TITLEPIC, the store.

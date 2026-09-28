@@ -1,5 +1,4 @@
-;;; Traces through the block map in 65816 assembly, Doom8088: Apple IIgs
-;;; Edition.
+;;; Traces through the block map in 65816 assembly.
 ;;;
 ;;; P_AproxDistance, P_PathTraverse and P_TraverseIntercepts of
 ;;; p_maputl.c, with the same results.

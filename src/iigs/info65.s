@@ -1,5 +1,4 @@
-;;; The thing and state tables in 65816 assembly, Doom8088: Apple IIgs
-;;; Edition.
+;;; The thing and state tables in 65816 assembly.
 ;;;
 ;;; The tables of info.c (the shareware things): the 4-letter names
 ;;; of the sprites, the states of the animations (sprite, frame, tics, action,

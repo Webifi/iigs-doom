@@ -1,4 +1,4 @@
-;;; The automap in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The automap in 65816 assembly.
 ;;;
 ;;; am_map.c, and V_DrawLine and V_ClearViewWindow of
 ;;; i_viigs.c, with the same results: the lines that the player saw

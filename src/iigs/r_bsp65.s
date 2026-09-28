@@ -1,4 +1,4 @@
-;;; BSP walk in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; BSP walk in 65816 assembly.
 ;;;
 ;;; R_RenderBSPNode, R_CheckBBox, R_Subsector, R_AddLine and
 ;;; R_ClipWallSegment of r_draw.c, with the same results; the light of

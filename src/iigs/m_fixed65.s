@@ -1,4 +1,4 @@
-;;; Fast multiplication for the 65816, Doom8088: Apple IIgs Edition.
+;;; Fast multiplication for the 65816.
 ;;;
 ;;; Quarter-square multiplication: x * y = sq(x + y) - sq(|x - y|) with
 ;;; sq(i) = floor(i * i / 4). 16 x 16 products use the large tables SQL and

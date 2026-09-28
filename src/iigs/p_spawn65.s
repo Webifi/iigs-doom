@@ -1,5 +1,4 @@
-;;; Spawning and removing mobjs in 65816 assembly, Doom8088: Apple IIgs
-;;; Edition.
+;;; Spawning and removing mobjs in 65816 assembly.
 ;;;
 ;;; P_SpawnMobj, P_RemoveMobj, P_SpawnPuff, P_SpawnBlood, P_SpawnMissile,
 ;;; P_SpawnPlayerMissile, P_SpawnMapThing (with P_SpawnPlayer) and

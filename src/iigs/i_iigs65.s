@@ -1,5 +1,4 @@
-;;; Startup, text console, keyboard and exit in 65816 assembly,
-;;; Doom8088: Apple IIgs Edition.
+;;; Startup, text console, keyboard and exit in 65816 assembly.
 ;;;
 ;;; i_iigs.c with the same results: main and the math tables, the
 ;;; 40 column text console with a printf for it (the formats that the game
@@ -36,6 +35,15 @@ TXTPAGE1      .equ    0xe0c054
 CLR80VID      .equ    0xe0c00c
 CLRALTCH      .equ    0xe0c00e
 TEXT_PAGE     .equ    0xe00400
+TEXTCOL       .equ    0xe0c022        ; text color (high 4 bits), background
+ROM_PR3       .equ    0xc300          ; the 80-column firmware on (PR#3)
+ROM_VTAB      .equ    0xfc22
+ROM_BASIC     .equ    0xe000          ; Applesoft cold start
+ROM_CH        .equ    0x24            ; the cursor column
+ROM_CV        .equ    0x25            ; the cursor row
+ROM_OURCH     .equ    0x057b          ; the cursor column of 80-column text
+QT_ROW        .equ    0x06            ; quitToBasic: 2 * the row (free zero page)
+QT_N          .equ    0x08            ; quitToBasic: the column count
 EV_KEYDOWN    .equ    0
 EV_KEYUP      .equ    1
 ADBQ_MASK     .equ    31              ; the size of iigs_adbq - 1
@@ -85,8 +93,7 @@ keyStamp:     .space  256             ; the call of I_StartTic that saw each
                                       ;   ADB key go down, 0: up
 
               .section cfar, rodata
-msgTitle:     .asciz  "Doom8088: Apple IIgs Edition\n\n"
-msgThanks:    .asciz  "\nThanks for playing Doom8088:\nApple IIgs Edition.\n"
+msgTitle:     .asciz  "Doom for the Apple IIgs\n\n"
 errSegPage:   .asciz  "R_CheckSegPage: the direct page does not fit the wall loop"
 #if defined TIMEDEMO_N
 demoName:     .ascii  "demo"
@@ -295,14 +302,7 @@ I_InitGraphics:
               sta     .near isGraphicsModeSet
               rtl
 I_Quit:       jsr     .kbank shutdown
-              jsr     .kbank textMode
-              jsr     .kbank clearText
-              lda     ##.word0 msgThanks
-              sta     dp:.tiny _Dp
-              lda     ##.word2 msgThanks
-              sta     dp:.tiny (_Dp+2)
-              jsr     .kbank format
-1$:           bra     1$
+              jmp     long:quitToBasic
 I_Error:      tsc                           ; the first value (bank 0)
               clc
               adc     ##4
@@ -998,3 +998,77 @@ postKey:      sta     .near EVENT
               sta     dp:.tiny (_Dp+2)
               jsl     long:D_PostEvent
               rts
+
+;;; ---------------------------------------------------------------------------
+;;; quitToBasic: the exit of DOS Doom on the IIgs: the ROM's 80-column text
+;;; with the ENDOOM page on rows 0-20 (tools/endtext.py), then Applesoft's
+;;; cold start from row 21: its two line feeds put the "]" prompt on row 23. In bank 0: the ROM's entries
+;;; return with RTS. shutdown has put the ROM and its vectors back.
+;;; ---------------------------------------------------------------------------
+              .section quitcode, text
+              .extern endText
+quitToBasic:  sep     #0x30
+              lda     #0x08                 ; the text pages shadowed again
+              sta     long:SHADOW
+              lda     #0xd1                 ; yellow on red, as ENDOOM
+              sta     long:TEXTCOL
+              lda     long:BORDER
+              and     #0xf0
+              ora     #0x01
+              sta     long:BORDER
+              lda     #0
+              pha
+              plb
+              rep     #0x20
+              lda     ##0
+              tcd
+              sec
+              xce                           ; emulation mode, as the ROM needs
+              ldx     #0xff
+              txs
+              jsr     abs:ROM_PR3           ; 80 columns, a clear screen
+              clc
+              xce
+              rep     #0x30
+              ldx     ##0                   ; X = the page, 80 bytes a row
+              stz     abs:QT_ROW
+1$:           phx
+              ldx     abs:QT_ROW
+              lda     long:textRowOffset,x
+              tay                           ; Y = the row on the screen
+              plx
+              sep     #0x20
+              lda     #40
+              sta     abs:QT_N
+2$:           lda     long:endText,x
+              phx
+              tyx
+              sta     long:0x010400,x       ; aux: the even columns
+              plx
+              lda     long:(endText+40),x
+              phx
+              tyx
+              sta     long:0x000400,x       ; main: the odd columns
+              plx
+              inx
+              iny
+              dec     abs:QT_N
+              bne     2$
+              rep     #0x21
+              txa
+              adc     ##40
+              tax
+              lda     abs:QT_ROW
+              adc     ##2
+              sta     abs:QT_ROW
+              cmp     ##42                  ; 21 rows
+              bcc     1$
+              sec
+              xce
+              lda     #21
+              sta     abs:ROM_CV
+              jsr     abs:ROM_VTAB
+              lda     #0
+              sta     abs:ROM_CH
+              sta     abs:ROM_OURCH
+              jmp     abs:ROM_BASIC
