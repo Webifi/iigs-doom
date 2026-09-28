@@ -1,4 +1,4 @@
-;;; The level loader, Doom8088: Apple IIgs Edition.
+;;; The level loader.
 ;;;
 ;;; Each map, the title picture and the intermission pictures are a set of
 ;;; lumps (tools/levelimg.py) that the game puts into the level window when

@@ -1,4 +1,4 @@
-;;; The column lists of the 3D view, Doom8088: Apple IIgs Edition.
+;;; The column lists of the 3D view.
 ;;;
 ;;; Each frame, the walls, floors, ceilings, sprites, masked walls and
 ;;; shadows of the 3D view become records in the lists of their columns

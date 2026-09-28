@@ -1,4 +1,4 @@
-;;; The cheats in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The cheats in 65816 assembly.
 ;;;
 ;;; m_cheat.c with the same results: each cheat sequence follows
 ;;; the keys, and a key that does not match starts it again (without a

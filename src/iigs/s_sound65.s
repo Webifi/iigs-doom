@@ -1,4 +1,4 @@
-;;; Sound effects in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Sound effects in 65816 assembly.
 ;;;
 ;;; The sound code of Doom (s_sound.c) for the Ensoniq DOC. The 8
 ;;; channels play the sounds of their origins with the volume and stereo

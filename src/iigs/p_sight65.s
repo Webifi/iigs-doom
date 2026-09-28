@@ -1,4 +1,4 @@
-;;; Line of sight checks in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Line of sight checks in 65816 assembly.
 ;;;
 ;;; P_CheckSight, P_CrossBSPNode, P_CrossSubsector and P_DivlineSide of
 ;;; p_sight.c, with the same results. P_CheckSight sets up los and walks

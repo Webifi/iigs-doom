@@ -1,4 +1,4 @@
-;;; The level setup in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The level setup in 65816 assembly.
 ;;;
 ;;; p_setup.c with the same results: the map lumps become the level
 ;;; data (lines, sides, sectors and subsectors in the zone; segs, nodes,

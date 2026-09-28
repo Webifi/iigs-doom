@@ -1,4 +1,4 @@
-;;; Ensoniq DOC access, Doom8088: Apple IIgs Edition: the tic timer, the
+;;; Ensoniq DOC access: the tic timer, the
 ;;; alarm of the game interrupt, and the register and RAM access of the
 ;;; sound code in src/iigs/s_sound65.s.
 ;;;

@@ -1,4 +1,4 @@
-;;; Settings and save slots, Doom8088: Apple IIgs Edition.
+;;; Settings and save slots.
 ;;; DOOM.SETTINGS is one block on disk 1 (tools/mkdisk.py).
 ;;; The loader supplies SETTINGS_IN and the drive details in BOOTINFO.
 ;;; G_SaveSettings writes only a changed file on the matching writable

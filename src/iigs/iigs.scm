@@ -37,7 +37,7 @@
     ;; firmware needs bank 0 code; the loader at $6000-$7FFF has finished
     ;; when the game runs. Its variables follow, up to $8FFF.
     (memory DiskCode (address (#x008000 . #x0089ff))
-            (section diskcode))
+            (section diskcode quitcode))
     ;; The game interrupt and the music player (src/iigs/irq65.s) in
     ;; slots $5D00-$5EFF (measured with music on). The disk
     ;; loads $DC00-$DEFF at $BA00-$BCFF (mkdisk.py). copyMusicIrq copies
@@ -154,8 +154,9 @@
     ;; tables of the shot tics do not use.
     (memory GuardCode (address (#x046c00 . #x046dff))
             (section guardcode))
+    ;; The ENDOOM page of the exit (tools/endtext.py) first: read once.
     (memory Code4d2 (address (#x046e00 . #x0488ff))
-            (section farcode cfar far))
+            (section (endtext #x046e00) farcode cfar far))
     (memory Code4e (address (#x048900 . #x049fff))
             (section coldcode))
     (memory Code4f (address (#x04a000 . #x04bdff))

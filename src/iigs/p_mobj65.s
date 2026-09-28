@@ -1,4 +1,4 @@
-;;; Moving things in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Moving things in 65816 assembly.
 ;;;
 ;;; P_XYMovement, P_ZMovement, P_ExplodeMissile, the wall slide of the
 ;;; player (P_SlideMove, PTR_SlideTraverse, P_HitSlideLine) and

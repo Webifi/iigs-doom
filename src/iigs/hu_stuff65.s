@@ -1,4 +1,4 @@
-;;; The heads-up text in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The heads-up text in 65816 assembly.
 ;;;
 ;;; hu_stuff.c with the same results: the message line at the top
 ;;; of the view (4 seconds) and the map title over the automap. The text

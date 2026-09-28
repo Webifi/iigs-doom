@@ -1,4 +1,4 @@
-;;; Using lines in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Using lines in 65816 assembly.
 ;;;
 ;;; P_UseLines, PTR_UseTraverse and PTR_NoWayTraverse of p_map.c
 ;;; with the same results.

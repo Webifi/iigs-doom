@@ -1,4 +1,4 @@
-;;; The game flow in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The game flow in 65816 assembly.
 ;;;
 ;;; g_game.c with the same results: the tic command from the keys,
 ;;; the game actions (level load, new game, demo, completed level,

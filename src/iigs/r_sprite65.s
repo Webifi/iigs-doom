@@ -1,4 +1,4 @@
-;;; Sprite drawing in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Sprite drawing in 65816 assembly.
 ;;;
 ;;; R_DrawSprite, R_DrawVisSprite (shadow sprites) and R_DrawMaskedColumn of
 ;;; r_draw.c. The C code with 32-bit pointers spends most of its

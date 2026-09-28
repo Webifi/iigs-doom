@@ -1,4 +1,4 @@
-;;; Platforms (lifts) in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Platforms (lifts) in 65816 assembly.
 ;;;
 ;;; p_plats.c with the same results: the plat thinker and
 ;;; EV_DoPlat. The C code also keeps a list of the active plats and the tag

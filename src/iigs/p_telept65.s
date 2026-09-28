@@ -1,4 +1,4 @@
-;;; Teleporters in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Teleporters in 65816 assembly.
 ;;;
 ;;; p_telept.c with the same results. P_TeleportMove is in
 ;;; src/iigs/p_map65.s.

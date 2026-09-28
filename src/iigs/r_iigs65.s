@@ -1,4 +1,4 @@
-;;; Renderer helpers in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Renderer helpers in 65816 assembly.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

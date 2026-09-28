@@ -1,4 +1,4 @@
-;;; Interactions in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Interactions in 65816 assembly.
 ;;;
 ;;; p_inter.c with the same results: the pickups
 ;;; (P_TouchSpecialThing, P_GivePower and the other give functions), the

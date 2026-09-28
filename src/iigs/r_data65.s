@@ -1,4 +1,4 @@
-;;; Render data in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Render data in 65816 assembly.
 ;;;
 ;;; r_data.c (the textures), r_sky.c (the sky), r_plane.c (the
 ;;; nukage frame), v_video.c (patches by lump number), r_things.c (the

@@ -1,4 +1,4 @@
-;;; SHR video, Doom8088: Apple IIgs Edition. 320 x 200, 16 colors per row.
+;;; SHR video. 320 x 200, 16 colors per row.
 ;;; R_DrawLists writes the 3D view directly. Other drawing uses the bank $01
 ;;; back buffer and marks byte ranges; I_FinishUpdate copies only those.
 ;;; Nibble-table and row changes invalidate the captured HUD text code.

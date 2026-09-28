@@ -1,5 +1,4 @@
-;;; Sector and line specials in 65816 assembly, Doom8088: Apple IIgs
-;;; Edition.
+;;; Sector and line specials in 65816 assembly.
 ;;;
 ;;; p_spec.c with the same results: the sector helpers, the tag
 ;;; checks, the animated textures, the switch timers, the scrolling walls

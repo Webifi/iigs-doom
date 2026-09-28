@@ -1,4 +1,4 @@
-;;; Weapons of the player in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Weapons of the player in 65816 assembly.
 ;;;
 ;;; p_pspr.c with the same results: the weapon sprite states and
 ;;; their action functions, weapon changes, ammunition, the noise alert and
