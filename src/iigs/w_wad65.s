@@ -1,4 +1,4 @@
-;;; The WAD directory in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The WAD directory in 65816 assembly.
 ;;;
 ;;; w_wad.c with the same results. The disk loader puts the resident WAD
 ;;; (tools/levelimg.py: the directory of all lumps and the lumps of every

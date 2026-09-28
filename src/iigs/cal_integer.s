@@ -1,5 +1,5 @@
 ;;; Copy of the Calypsi C library src/lib/lowlevel/integer.s (version 5.18)
-;;; without _Mul16 and _Mul32, for Doom8088: Apple IIgs Edition.
+;;; without _Mul16 and _Mul32.
 /****************************************************************************
  *
  * Copyright Håkan Thörngren
@@ -22,8 +22,8 @@
 
               .extern _Dp
 
-;;; _Mul16 and _Mul32 are in src/iigs/m_fixed65.s (Doom8088: Apple IIgs
-;;; Edition), which uses quarter-square tables instead of shift and add.
+;;; _Mul16 and _Mul32 are in src/iigs/m_fixed65.s, which uses quarter-square
+;;; tables instead of shift and add.
 
 ;;; ***************************************************************************
 ;;;
@@ -283,7 +283,7 @@ DivMod32:     bit     dp:.tiny(_Dp+2)
 
               .public _UDivMod32
 _UDivMod32:
-;;; Doom8088: Apple IIgs Edition: fast paths for a 16-bit divisor.
+;;; Fast paths for a 16-bit divisor.
 ;;; A divisor below 256 (the column count of rw_scalestep) runs in 8-bit
 ;;; mode: the quotient bits replace the dividend bytes with 8-bit
 ;;; read-modify-writes, each followed by register work and cache hits, and

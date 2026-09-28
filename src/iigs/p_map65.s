@@ -1,4 +1,4 @@
-;;; Movement clipping in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Movement clipping in 65816 assembly.
 ;;;
 ;;; P_CheckPosition, P_TryMove, PIT_CheckLine, PIT_GetSectors and
 ;;; P_CreateSecNodeList of p_map.c, and P_PointOnLineSide,

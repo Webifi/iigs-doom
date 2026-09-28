@@ -1,4 +1,4 @@
-;;; Doors in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Doors in 65816 assembly.
 ;;;
 ;;; p_doors.c with the same results: the door thinker with the
 ;;; gradual light of tagged manual doors, and EV_DoDoor; also the manual

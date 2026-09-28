@@ -1,4 +1,4 @@
-;;; Patch drawing into the SHR back buffer, Doom8088: Apple IIgs Edition.
+;;; Patch drawing into the SHR back buffer.
 ;;;
 ;;; Each patch pixel is one SHR pixel (a nibble). There is a nibble table
 ;;; of 1 KB for each of the 16 palettes, with four parts of 256 entries:

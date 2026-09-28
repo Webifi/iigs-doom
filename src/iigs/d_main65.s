@@ -1,4 +1,4 @@
-;;; Main loop and display, Doom8088: Apple IIgs Edition.
+;;; Main loop and display.
 ;;; The command-line timedemo runs one tic per frame; normal play and the
 ;;; menu benchmark run tics from the DOC clock. Static screens track menu
 ;;; and skull versions so an idle menu does not repaint the whole screen.

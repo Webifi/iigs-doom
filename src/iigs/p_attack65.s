@@ -1,4 +1,4 @@
-;;; Hitscan attacks in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Hitscan attacks in 65816 assembly.
 ;;;
 ;;; P_AimLineAttack, P_LineAttack, their traversers PTR_AimTraverse and
 ;;; PTR_ShootTraverse, FixedMul3, P_ShootSpecialLine and

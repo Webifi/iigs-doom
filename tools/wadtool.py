@@ -707,7 +707,7 @@ def build_colors(wad, gsview):
 
 # --------------------------------------------------------------------------
 
-CREDITS = ('Doom8088: Apple IIgs Edition\r\n'
+CREDITS = ('Doom for the Apple IIgs\r\n'
            'Doom8088 by Frenkel Smeijers\r\n'
            'based on\r\n'
            'GBA PrBoom port created by doomhack')

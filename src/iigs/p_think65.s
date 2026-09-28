@@ -1,4 +1,4 @@
-;;; The thinker list in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The thinker list in 65816 assembly.
 ;;;
 ;;; P_InitThinkers, P_AddThinker, P_RemoveThinker, P_RemoveThing and their
 ;;; delayed removers, P_NextThinker and P_Ticker of p_tick.c, with

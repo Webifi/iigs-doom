@@ -1,4 +1,4 @@
-;;; Sound bank decoder, Doom8088: Apple IIgs Edition.
+;;; Sound bank decoder.
 ;;;
 ;;; Decodes the blocks of tools/sndbank.py: 16 samples each, a header byte
 ;;; (order << 4) | width, then 2 * width bytes of residuals. The residuals

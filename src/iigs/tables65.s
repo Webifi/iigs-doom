@@ -1,5 +1,4 @@
-;;; Sine and cosine of tables.c in 65816 assembly, Doom8088:
-;;; Apple IIgs Edition.
+;;; Sine and cosine of tables.c in 65816 assembly.
 ;;;
 ;;; finesine and finecosine read full tables (build/tables/sine.bin of
 ;;; tools/gensine.py, loaded from disk at SINE_TAB) that hold the values

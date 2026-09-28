@@ -1,4 +1,4 @@
-;;; The interrupt of the game, Doom8088: Apple IIgs Edition.
+;;; The interrupt of the game.
 ;;;
 ;;; Sources: a byte from the ADB microcontroller (the ADB data interrupt), a
 ;;; mouse report (the ADB mouse interrupt), and the DOC alarm (oscillator 30

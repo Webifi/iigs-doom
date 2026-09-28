@@ -1,5 +1,4 @@
-;;; Moving floors and ceilings in 65816 assembly, Doom8088: Apple IIgs
-;;; Edition.
+;;; Moving floors and ceilings in 65816 assembly.
 ;;;
 ;;; p_floor.c with the same results: the plane movers with the
 ;;; checks of the things in the sector, the floor thinker, and the floor,

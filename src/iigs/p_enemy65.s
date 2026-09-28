@@ -1,4 +1,4 @@
-;;; Monster thinking in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Monster thinking in 65816 assembly.
 ;;;
 ;;; p_enemy2.c and p_enemy.c, with the same results.
 ;;; C calling convention: the actor (a far pointer) in _Dp[0-3]. A public

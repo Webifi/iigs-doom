@@ -90,7 +90,6 @@ READ, WRITE, RENAME, DESTROY = 0x01, 0x02, 0x40, 0x80
 INVISIBLE = 0x04                # GS/OS: the Finder does not show the file
 
 README = """Doom for the Apple IIgs
-Doom8088: Apple IIgs Edition
 
 Disk {n} of {total}
 
@@ -105,7 +104,6 @@ stay in memory only.
 """
 
 README_HD = """Doom for the Apple IIgs
-Doom8088: Apple IIgs Edition
 
 To play, start the IIgs from this volume. The game needs an accelerator
 and 4 MB of memory. It saves its settings and saved games in the file

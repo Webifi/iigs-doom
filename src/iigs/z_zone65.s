@@ -1,4 +1,4 @@
-;;; The zone memory in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The zone memory in 65816 assembly.
 ;;;
 ;;; z_zone.c (its IIgs code) with the same results. The zone is
 ;;; the banks ZONE_FIRST_BANK to ZONE_LAST_BANK: a double linked list of

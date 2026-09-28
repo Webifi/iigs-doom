@@ -1,4 +1,4 @@
-;;; Switches and buttons in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Switches and buttons in 65816 assembly.
 ;;;
 ;;; p_switch.c with the same results: the switch textures, the
 ;;; buttons that change back, and P_UseSpecialLine; also P_CrossSpecialLine

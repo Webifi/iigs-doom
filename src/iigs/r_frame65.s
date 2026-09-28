@@ -1,4 +1,4 @@
-;;; The frame of the view in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The frame of the view in 65816 assembly.
 ;;;
 ;;; R_RenderPlayerView, R_SetupFrame and the clears at the frame start and
 ;;; R_DrawMasked (the sprite sort, the masked mid textures, the player

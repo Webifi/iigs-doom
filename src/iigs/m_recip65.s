@@ -1,4 +1,4 @@
-;;; Fast reciprocals for the 65816, Doom8088: Apple IIgs Edition.
+;;; Fast reciprocals for the 65816.
 ;;;
 ;;; 0xFFFFFFFF / v is found from a table: v is shifted left by s bits
 ;;; until bit 31 is set, the top 16 bits M index the table of

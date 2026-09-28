@@ -1,4 +1,4 @@
-;;; Trace intercepts in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Trace intercepts in 65816 assembly.
 ;;;
 ;;; PIT_AddLineIntercepts and PIT_AddThingIntercepts of
 ;;; p_maputl.c with P_PointOnDivlineSide, P_InterceptVector3 and

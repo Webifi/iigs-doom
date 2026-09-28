@@ -1,4 +1,4 @@
-;;; Sprite projection in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Sprite projection in 65816 assembly.
 ;;;
 ;;; R_AddSprites and R_ProjectSprite of r_draw.c, with the same
 ;;; results. PROJECTION / (tz >> FRACBITS) and (PROJECTIONY * FRACUNIT) /

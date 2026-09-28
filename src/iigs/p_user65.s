@@ -1,4 +1,4 @@
-;;; The player in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The player in 65816 assembly.
 ;;;
 ;;; p_user.c with the same results: P_PlayerThink with the
 ;;; movement, the view height and bobbing, the death view and the special

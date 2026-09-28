@@ -1,4 +1,4 @@
-;;; Menus, key setup and benchmark, Doom8088: Apple IIgs Edition.
+;;; Menus, key setup and benchmark.
 ;;; Menu and skull versions let D_Display reuse a static screen.
 ;;; Messages are drawn from the original string without a zone copy.
 ;;; Only SAVE SETTINGS and a saved game write the settings file;

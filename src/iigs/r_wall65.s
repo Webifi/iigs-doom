@@ -1,4 +1,4 @@
-;;; Wall setup in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Wall setup in 65816 assembly.
 ;;;
 ;;; R_StoreWallRange of r_draw.c, with the same
 ;;; results. The seg, side, line, sectors and texture tables are read

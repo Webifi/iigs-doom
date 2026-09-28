@@ -1,4 +1,4 @@
-;;; Status bar, Doom8088: Apple IIgs Edition.
+;;; Status bar.
 ;;; Widgets hold near addresses of values and patch lists. Changed widgets
 ;;; restore their background before drawing; the menu forces a full redraw
 ;;; on return. Damage, bonus and radiation-suit tints follow ST_doPaletteStuff.

@@ -1,4 +1,4 @@
-;;; Start of the program, Doom8088: Apple IIgs Edition.
+;;; Start of the program.
 ;;;
 ;;; The stage 2 loader jumps here in native mode with 16-bit registers. All
 ;;; code and initialized data are already in place, so only the sections

@@ -1,4 +1,4 @@
-;;; Thinkers in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; Thinkers in 65816 assembly.
 ;;;
 ;;; P_RunThinkers of p_tick.c and P_MobjThinker,
 ;;; P_MobjBrainlessThinker and P_SetMobjState of p_mobj.c, with

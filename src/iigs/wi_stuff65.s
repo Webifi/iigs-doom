@@ -1,4 +1,4 @@
-;;; The intermission in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; The intermission in 65816 assembly.
 ;;;
 ;;; wi_stuff.c and wi_lib.c with the same results: the counts of
 ;;; the level (kills, items, secret, times) count up with sounds, then the

@@ -1,4 +1,4 @@
-;;; memcpy and memset in 65816 assembly, Doom8088: Apple IIgs Edition.
+;;; memcpy and memset in 65816 assembly.
 ;;;
 ;;; These replace the byte loops of the Calypsi C library (lib_memcpy.o
 ;;; and lib_memset.o). They copy and fill a word at a time, from the

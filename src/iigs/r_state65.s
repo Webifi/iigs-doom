@@ -1,5 +1,4 @@
-;;; The shared state of the renderer in 65816 assembly, Doom8088: Apple IIgs
-;;; Edition.
+;;; The shared state of the renderer in 65816 assembly.
 ;;;
 ;;; The variables of r_draw.c that several renderer files use (in
 ;;; the order of the C file): the drawsegs and their clip lists, the column
