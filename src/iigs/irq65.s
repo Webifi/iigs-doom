@@ -125,19 +125,19 @@ wake:         xba
               and     #0x0f
               tax
               lda     #ALARM_FREQLO
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_WLO,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               bcs     1$
               lda     #ALARM_FREQHI
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_WHI,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               sta     abs:MB_FCHI           ; (musResume restarts with it)
 1$:           lda     #ALARM_CONTROL        ; a halted one-shot counts again
-              sta     long:SOUNDADRL        ;   from 0 when it runs
+              pha                           ;   from 0 when it runs
               lda     #ALARM_CTL
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
 next:         lda     abs:MB_STREAM,y
               cmp     #0xd0
               bcs     done
@@ -172,42 +172,42 @@ songEnd:      ldy     ##0
 ;;; 0x0v: level + 4 (3 dB down); 0x8v: + 8; 0x9v: - 4. 0x1v a: level a.
 cLevDn:       tax
               ora     #REG_VOLUME
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_LEVEL,x
               clc
               adc     #4
               bra     setLev
 cLevDn2:      tax
               ora     #REG_VOLUME
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_LEVEL,x
               clc
               adc     #8
               bra     setLev
 cLevUp:       tax
               ora     #REG_VOLUME
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_LEVEL,x
               sec
               sbc     #4
               bra     setLev
 cLev:         tax
               ora     #REG_VOLUME
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_STREAM,y
               iny
 setLev:       sta     abs:MB_LEVEL,x
               tax
               lda     abs:MB_VSCALE,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               brl     next
 
 ;;; 0x6v: halt (silence; the next note restarts the table).
 cHalt:        tax
               ora     #REG_CONTROL
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_CTLH,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               brl     next
 
 ;;; A note: halt (the run below starts the table at its start), [table],
@@ -231,21 +231,21 @@ noteT:        sta     abs:MB_V              ;   table code keeps it)
               bmi     noteTab
               txa
               ora     #REG_CONTROL
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_CTLH,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
 noteTab:      txa
               ora     #REG_POINTER
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_VDESC,x
               tax                           ; X = the descriptor
               lda     abs:MB_DPTR,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               lda     abs:MB_V
               ora     #REG_SIZE
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_DSIZ,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               lda     abs:MB_DMODE,x
               ldx     abs:MB_V
               ora     abs:MB_CTLR,x
@@ -259,22 +259,22 @@ cNote:        sta     abs:MB_V
               bmi     1$
               txa
               ora     #REG_CONTROL
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_CTLH,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
 1$:           txa
 notePitch:    ora     #REG_FREQLO
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_STREAM,y
               iny
               tax
               lda     abs:MB_PLO,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               lda     abs:MB_V
               ora     #REG_FREQHI
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_PHI,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
 noteLevel:    ldx     abs:MB_V              ; (MB_V + 1 is 0)
               lda     abs:MB_STREAM,y
               iny
@@ -284,17 +284,17 @@ noteLevel:    ldx     abs:MB_V              ; (MB_V + 1 is 0)
               sta     abs:MB_LEVEL,x
               txa
               ora     #REG_VOLUME
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_LEVEL,x
               tax
               lda     abs:MB_VSCALE,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               ldx     abs:MB_V
 1$:           txa
               ora     #REG_CONTROL
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_VCTL,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               brl     next
 cNoteS:       sta     abs:MB_V
               tax
@@ -302,10 +302,32 @@ cNoteS:       sta     abs:MB_V
               bmi     noteLevel
               txa
               ora     #REG_CONTROL
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_CTLH,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               bra     noteLevel
+;;; docSend: the address byte under the return, and A the data. Wait until
+;;; $C03C bit 7 is clear, then store the address and the data with no poll
+;;; between them. The caller loads both before the call, so that work hides
+;;; in the previous byte's wait. 8-bit A. A and carry come back; N and Z
+;;; do not. B comes back 0. In this image so the wake does not evict the
+;;; volume table (bank 3 code shares its slots).
+docSend:      pha
+docBusy:      lda     long:SOUNDCTL
+              bmi     docBusy
+              lda     4,s
+              sta     long:SOUNDADRL
+              pla
+              sta     long:SOUNDDATA
+              xba                           ; the data, while the return moves
+              lda     2,s
+              sta     3,s
+              lda     1,s
+              sta     2,s
+              pla                           ; B still holds the data; A is the
+              lda     #0                    ;   return's low byte, so clear B
+              xba
+              rts
 ;;; ---------------------------------------------------------------------------
 ;;; The rare commands, in the cache slots $5C00-$5CFF (src/iigs/iigs.scm):
 ;;; the pitch changes, the loop of an attack table, the end of a song.
@@ -314,25 +336,25 @@ cNoteS:       sta     abs:MB_V
 ;;; 0x4v p: pitch p. 0x5v p: its low byte only (the high byte is the same).
 cPitch:       sta     abs:MB_V
               ora     #REG_FREQLO
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_STREAM,y
               iny
               tax
               lda     abs:MB_PLO,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               lda     abs:MB_V
               ora     #REG_FREQHI
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_PHI,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               jmp     abs:next
 cPitchLo:     ora     #REG_FREQLO
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_STREAM,y
               iny
               tax
               lda     abs:MB_PLO,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               jmp     abs:next
 
 ;;; 0xBv: the loop of the voice's attack table (its pointer and size).
@@ -342,17 +364,17 @@ cSwitch:      cmp     #0x0e
               beq     cRawControl
               tax
               ora     #REG_POINTER
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_VDESC,x
               tax
               lda     abs:MB_LPTR,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               lda     abs:(MB_STREAM-1),y   ; the voice
               and     #0x0f
               ora     #REG_SIZE
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_LSIZ,x
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               jmp     abs:next
 
 ;;; 0xBE v page: a phase-compatible waveform page, same size and pitch.
@@ -361,10 +383,10 @@ cSwitch:      cmp     #0x0e
 cWavePage:    lda     abs:MB_STREAM,y
               iny
               ora     #REG_POINTER
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_STREAM,y
               iny
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               jmp     abs:next
 
 ;;; 0xBF v control: a muted voice's output channel. The next ordinary
@@ -372,10 +394,10 @@ cWavePage:    lda     abs:MB_STREAM,y
 cRawControl:  lda     abs:MB_STREAM,y
               iny
               ora     #REG_CONTROL
-              sta     long:SOUNDADRL
+              pha
               lda     abs:MB_STREAM,y
               iny
-              sta     long:SOUNDDATA
+              jsr     abs:docSend
               jmp     abs:next
 
 ;;; The end of a song: the next wake is its first again, or (a song that
