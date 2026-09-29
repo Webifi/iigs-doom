@@ -22,11 +22,12 @@
 #include "lists.inc"
 #include "wpage.inc"
 #include "viewwin.inc"
+#include "replay.inc"
 
               .extern _DirectPageStart, _NearBaseAddress, iigs_shrcmapA
               .extern _Dp, I_Error
               .extern DC_ROW, DC_COUNT, DC_COLX, DC_FRAC, DC_FSTEP, DC_SRC
-              .extern DC_CMA, DC_CMB, DC_FLATW, DC_TI, DC_SF, DC_SI
+              .extern DC_CMA, DC_CMB, DC_FLATW, DC_TI
               .extern DC_ENTRY, DC_EXITP
               .extern fuzzColumn, texEntryLo, texEntryHi, texBlocks
               .extern SEGPATCH, SEGPATCHT, R_RenderSegLoop, AM_MODE, AM_Clean
@@ -45,10 +46,10 @@ TEXBANK       .equ    0x050000        ; the bank of texBlocks (section hotdraw,
 ;;; (texEntryLo, texEntryHi of tools/gendraw.py), copied into BUF_BANK, the
 ;;; data bank of the drawers, in cache slots that the view stores never use.
 ;;; The exit patch changes a row's first byte to JMP indirect ($6C).
-;;; Smaller views use EB 65 04 -> JMP ($0465). Full-view pairs use EB 65 05
-;;; on odd rows and 98 65 07 on even rows: JMP ($0565) or JMP ($0765).
-;;; Replay saves these text-page words and restores each row's own opcode.
-TEXRET_PTR    .equ    0x000465
+;;; The ADC operands use replay-only step bytes at DP $84-$87. Thus the
+;;; exit words are $8465/$8565/$8765, outside all video areas, with the
+;;; original $0465/$0565/$0765 cache slots (replay.inc).
+TEXRET_PTR    .equ    RS_RET
 TEXLO         .equ    0x1e41
 TEXHI         .equ    TEXLO + CONST_VIEWHEIGHT + 1
 
@@ -314,7 +315,7 @@ flush:        phb
               dex
               dex
               bpl     1$
-              jsl     long:drawAllL
+              jsl     long:flushReplay
               ldx     ##(0x2c - 2)
 2$:           lda     long:RL_SAVE,x
               sta     dp:0,x
@@ -725,14 +726,14 @@ texEndY:      lda     abs:TEXLO,y
               adc     #CMAP_B
               sta     dp:.tiny (DC_CMB+1)
               lda     long:(RECBASE+R_SF),x ; original and paired steps,
-              sta     dp:.tiny DC_SF        ; shared by the K_TEXC chain
+              sta     dp:.tiny RS_SF        ; shared by the K_TEXC chain
               asl     a
-              sta     dp:.tiny (DC_SF+1)
+              sta     dp:.tiny (RS_SF+1)
               lda     long:(RECBASE+R_SI),x
-              sta     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SI
               adc     #0                    ; carry from 2 * SF
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               txa                           ; the next record, in the same page
               adc     #TEX_SIZE             ;   (carry clear: SI + carry < 256)
               sta     dp:.tiny RL_P
@@ -965,14 +966,14 @@ skipLoad:     rep     #0x20
               adc     #CMAP_B
               sta     dp:.tiny (DC_CMB+1)
               lda     long:(RECBASE+R_SF),x ; original and paired steps,
-              sta     dp:.tiny DC_SF        ; shared by the K_TEXC chain
+              sta     dp:.tiny RS_SF        ; shared by the K_TEXC chain
               asl     a
-              sta     dp:.tiny (DC_SF+1)
+              sta     dp:.tiny (RS_SF+1)
               lda     long:(RECBASE+R_SI),x
-              sta     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SI
               adc     #0                    ; carry from 2 * SF
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               rep     #0x20                 ; X = the K_TEXC again
               txa
               clc
@@ -1016,16 +1017,16 @@ cutTexC:      xba                           ; B = e
               brl     done
 
 ;;; texStartC: texStart for a K_TEXC record (A = e, B = a): the step is
-;;; that of the direct page (DC_SF, DC_SI).
+;;; that of the direct page (RS_SF, RS_SI).
 texStartC:    xba                           ; c1 - a
               eor     #0xff
               sec
               adc     dp:.tiny RL_CV1
               sta     dp:.tiny RL_K
               stz     dp:.tiny (RL_K+1)
-              lda     dp:.tiny DC_SF        ; SF | SI << 8
+              lda     dp:.tiny RS_SF        ; SF | SI << 8
               sta     dp:.tiny RL_ST
-              lda     dp:.tiny DC_SI
+              lda     dp:.tiny RS_SI
               sta     dp:.tiny (RL_ST+1)
               rep     #0x20
               lda     long:(RECBASE+R_TF),x ; TF | TI << 8
@@ -1060,11 +1061,11 @@ pairPrepare:  lda     dp:.tiny RL_TENT      ; +1 prefix: even entries are odd
               bcs     pairEven
               lda     long:(RECBASE+R_TF),x ; odd start: undo one frac step
               sec
-              sbc     dp:.tiny DC_SF
+              sbc     dp:.tiny RS_SF
               xba
               lda     long:(RECBASE+R_TI),x
               sbc     #0
-              bit     dp:.tiny DC_SF
+              bit     dp:.tiny RS_SF
               bpl     pairNoRound
               inc     a
 pairNoRound:  and     #0x7f
@@ -1324,18 +1325,18 @@ hOvl:         tyx                           ; (8-bit A: the indexes by TAX
               beq     1$
 2$:           brl     hdone
 
-;;; htex: a K_TEX record: the step S (RL_HS) and 2S (DC_SF, DC_SI), the
+;;; htex: a K_TEX record: the step S (RL_HS) and 2S (RS_SF, RS_SI), the
 ;;; texels, the colormaps into the direct page (a K_TEXC after it takes
 ;;; them), its rows (hTexRows).
 htex:         lda     long:(RECBASE+R_SF),x ; the step and twice the step (its
               sta     dp:.tiny RL_HS        ;   whole part mod 128: the blocks
               asl     a                     ;   need TI + SI + 1 < 256, and TI
-              sta     dp:.tiny DC_SF        ;   is mod 128)
+              sta     dp:.tiny RS_SF        ;   is mod 128)
               lda     long:(RECBASE+R_SI),x
               sta     dp:.tiny (RL_HS+1)
               rol     a
               and     #0x7f
-              sta     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SI
               lda     long:(RECBASE+R_SRC),x ; the texels
               sta     dp:.tiny DC_SRC
               lda     long:(RECBASE+R_SRC+1),x
@@ -1855,9 +1856,9 @@ trec:         lda     long:(RECBASE+R_ROW),x
 ;;; ttex: a K_TEX record: its step S, texels, colormaps, the position before
 ;;; its first row (tTexRows).
 ttex:         lda     long:(RECBASE+R_SF),x ; the step (the blocks step once or
-              sta     dp:.tiny DC_SF        ;   twice with it; RL_HS only for a
+              sta     dp:.tiny RS_SF        ;   twice with it; RL_HS only for a
               lda     long:(RECBASE+R_SI),x ;   cut, tTexRows)
-              sta     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SI
               lda     long:(RECBASE+R_SRC),x ; the texels
               sta     dp:.tiny DC_SRC
               lda     long:(RECBASE+R_SRC+1),x
@@ -1899,7 +1900,7 @@ ttexc:        lda     long:(RECBASE+R_TCSRC),x
               lda     long:(RECBASE+R_END),x
 
 ;;; tTexRows: the texture rows RL_HA .. A - 1 (8-bit A), the position RL_HP
-;;; one row before the first, the step DC_SF, DC_SI; the cut in full rows
+;;; one row before the first, the step RS_SF, RS_SI; the cut in full rows
 ;;; (hCut), then window rows k0 .. k1 - 1. The block of k0 steps twice when
 ;;; k0 is even: the start is pos(a - 1) - S when a mod 3 = 0 (then k0 is
 ;;; even and row a its first row), else pos(a - 1) (a mod 3 = 1: k0 odd, one
@@ -1909,9 +1910,9 @@ ttexc:        lda     long:(RECBASE+R_TCSRC),x
 tTexRows:     cmp     dp:.tiny RL_CV0P
               bcc     1$
               pha                           ; the cut (hCut steps RL_HS)
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               sta     dp:.tiny RL_HS
-              lda     dp:.tiny DC_SI
+              lda     dp:.tiny RS_SI
               sta     dp:.tiny (RL_HS+1)
               pla
               jsr     .kbank hCut
@@ -1940,9 +1941,9 @@ tTexRows:     cmp     dp:.tiny RL_CV0P
               lda     dp:.tiny (RL_HP+1)
               xba
               sec
-              sbc     dp:.tiny DC_SF
+              sbc     dp:.tiny RS_SF
               xba
-              sbc     dp:.tiny DC_SI
+              sbc     dp:.tiny RS_SI
               bra     12$
 11$:          sta     dp:.tiny (RL_TENT+1)
               lda     dp:.tiny RL_HP
@@ -2478,25 +2479,25 @@ oOvl:         tyx
               beq     1$
 2$:           brl     odone
 
-;;; otex: a K_TEX record: the step S (RL_HS) and 3S (DC_SF, DC_SI), the
+;;; otex: a K_TEX record: the step S (RL_HS) and 3S (RS_SF, RS_SI), the
 ;;; texels, the colormaps into the direct page (a K_TEXC after it takes
 ;;; them), its rows (oTexRows).
 otex:         lda     long:(RECBASE+R_SF),x ; the step and three times the step
               sta     dp:.tiny RL_HS        ;   (its whole part mod 128: the
               asl     a                     ;   blocks need TI + SI + 1 < 256,
-              sta     dp:.tiny DC_SF        ;   and TI is mod 128)
+              sta     dp:.tiny RS_SF        ;   and TI is mod 128)
               lda     long:(RECBASE+R_SI),x
               sta     dp:.tiny (RL_HS+1)
               rol     a
-              sta     dp:.tiny DC_SI
-              lda     dp:.tiny DC_SF
+              sta     dp:.tiny RS_SI
+              lda     dp:.tiny RS_SF
               clc
               adc     dp:.tiny RL_HS
-              sta     dp:.tiny DC_SF
-              lda     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SF
+              lda     dp:.tiny RS_SI
               adc     dp:.tiny (RL_HS+1)
               and     #0x7f
-              sta     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SI
               lda     long:(RECBASE+R_SRC),x ; the texels
               sta     dp:.tiny DC_SRC
               lda     long:(RECBASE+R_SRC+1),x
@@ -3483,25 +3484,25 @@ qOvl:         tyx
               beq     1$
 2$:           brl     qdone
 
-;;; qtex: a K_TEX record: the step S (RL_HS) and 4S (DC_SF, DC_SI), the
+;;; qtex: a K_TEX record: the step S (RL_HS) and 4S (RS_SF, RS_SI), the
 ;;; texels, the colormaps into the direct page (a K_TEXC after it takes
 ;;; them), its rows (qTexRows).
 qtex:         lda     long:(RECBASE+R_SF),x ; the step and four times the step
               sta     dp:.tiny RL_HS        ;   (its whole part mod 128: the
               asl     a                     ;   blocks need TI + SI + 1 < 256,
-              sta     dp:.tiny DC_SF        ;   and TI is mod 128)
+              sta     dp:.tiny RS_SF        ;   and TI is mod 128)
               lda     long:(RECBASE+R_SI),x
               sta     dp:.tiny (RL_HS+1)
               rol     a
-              sta     dp:.tiny DC_SI
-              lda     dp:.tiny DC_SF
+              sta     dp:.tiny RS_SI
+              lda     dp:.tiny RS_SF
               clc
               asl     a
-              sta     dp:.tiny DC_SF
-              lda     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SF
+              lda     dp:.tiny RS_SI
               rol     a
               and     #0x7f
-              sta     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SI
               lda     long:(RECBASE+R_SRC),x ; the texels
               sta     dp:.tiny DC_SRC
               lda     long:(RECBASE+R_SRC+1),x
@@ -4019,9 +4020,9 @@ urec:         lda     long:(RECBASE+R_ROW),x
 ;;; utex: a K_TEX record: its step S, texels, colormaps, the position before
 ;;; its first row (uTexRows).
 utex:         lda     long:(RECBASE+R_SF),x ; the step (the blocks step once or
-              sta     dp:.tiny DC_SF        ;   twice with it; RL_HS only for a
+              sta     dp:.tiny RS_SF        ;   twice with it; RL_HS only for a
               lda     long:(RECBASE+R_SI),x ;   cut, uTexRows)
-              sta     dp:.tiny DC_SI
+              sta     dp:.tiny RS_SI
               lda     long:(RECBASE+R_SRC),x ; the texels
               sta     dp:.tiny DC_SRC
               lda     long:(RECBASE+R_SRC+1),x
@@ -4069,9 +4070,9 @@ utexc:        lda     long:(RECBASE+R_TCSRC),x
 uTexRows:     cmp     dp:.tiny RL_CV0P
               bcc     1$
               pha                           ; the cut (hCut steps RL_HS)
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               sta     dp:.tiny RL_HS
-              lda     dp:.tiny DC_SI
+              lda     dp:.tiny RS_SI
               sta     dp:.tiny (RL_HS+1)
               pla
               jsr     .kbank hCut
@@ -4106,9 +4107,9 @@ uTexRows:     cmp     dp:.tiny RL_CV0P
               lda     dp:.tiny (RL_HP+1)
               xba
               sec
-              sbc     dp:.tiny DC_SF
+              sbc     dp:.tiny RS_SF
               xba
-              sbc     dp:.tiny DC_SI
+              sbc     dp:.tiny RS_SI
               bra     12$
 11$:          sta     dp:.tiny (RL_TENT+1)
               lda     dp:.tiny RL_HP
@@ -4385,7 +4386,7 @@ uFloor:     lda     long:(U_PAGE2+1),x
               .section fourimg, text
 texImgU:      xba
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4393,7 +4394,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x2d20,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4404,10 +4405,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x2dc0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4415,7 +4416,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x2e60,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4423,7 +4424,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x2f00,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4434,10 +4435,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x2fa0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4445,7 +4446,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3040,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4453,7 +4454,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x30e0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4464,10 +4465,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3180,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4475,7 +4476,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3220,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4483,7 +4484,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x32c0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4494,10 +4495,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3360,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4505,7 +4506,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3400,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4513,7 +4514,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x34a0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4524,10 +4525,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3540,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4535,7 +4536,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x35e0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4543,7 +4544,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3680,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4554,10 +4555,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3720,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4565,7 +4566,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x37c0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4573,7 +4574,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3860,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4584,10 +4585,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3900,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4595,7 +4596,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x39a0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4603,7 +4604,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3a40,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4614,10 +4615,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3ae0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4625,7 +4626,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3b80,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4633,7 +4634,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3c20,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4644,10 +4645,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3cc0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4655,7 +4656,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3d60,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4663,7 +4664,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3e00,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4674,10 +4675,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3ea0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4685,7 +4686,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x3f40,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4693,7 +4694,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x3fe0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4704,10 +4705,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4080,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4715,7 +4716,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x4120,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4723,7 +4724,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x41c0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4734,10 +4735,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x4260,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4745,7 +4746,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4300,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4753,7 +4754,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x43a0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4764,10 +4765,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4440,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4775,7 +4776,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x44e0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4783,7 +4784,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4580,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4794,10 +4795,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x4620,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4805,7 +4806,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x46c0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4813,7 +4814,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x4760,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4824,10 +4825,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4800,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4835,7 +4836,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x48a0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4843,7 +4844,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4940,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4854,10 +4855,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x49e0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4865,7 +4866,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4a80,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4873,7 +4874,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x4b20,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4884,10 +4885,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4bc0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4895,7 +4896,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x4c60,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4903,7 +4904,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4d00,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4914,10 +4915,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x4da0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4925,7 +4926,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4e40,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4933,7 +4934,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x4ee0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4944,10 +4945,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x4f80,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4955,7 +4956,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5020,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4963,7 +4964,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x50c0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -4974,10 +4975,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5160,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4985,7 +4986,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5200,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -4993,7 +4994,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x52a0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5004,10 +5005,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5340,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5015,7 +5016,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x53e0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5023,7 +5024,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5480,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5034,10 +5035,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5520,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5045,7 +5046,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x55c0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5053,7 +5054,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5660,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5064,10 +5065,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5700,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5075,7 +5076,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x57a0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5083,7 +5084,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5840,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5094,10 +5095,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x58e0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5105,7 +5106,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5980,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5113,7 +5114,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5a20,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5124,10 +5125,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5ac0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5135,7 +5136,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5b60,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5143,7 +5144,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5c00,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5154,10 +5155,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5ca0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5165,7 +5166,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5d40,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5173,7 +5174,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5de0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5184,10 +5185,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5e80,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5195,7 +5196,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x5f20,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5203,7 +5204,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x5fc0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5214,10 +5215,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6060,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5225,7 +5226,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6100,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5233,7 +5234,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x61a0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5244,10 +5245,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6240,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5255,7 +5256,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x62e0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5263,7 +5264,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6380,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5274,10 +5275,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6420,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5285,7 +5286,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x64c0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5293,7 +5294,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6560,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5304,10 +5305,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6600,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5315,7 +5316,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x66a0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5323,7 +5324,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6740,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5334,10 +5335,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x67e0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5345,7 +5346,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6880,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5353,7 +5354,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6920,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5364,10 +5365,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x69c0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5375,7 +5376,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6a60,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5383,7 +5384,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6b00,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5394,10 +5395,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6ba0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5405,7 +5406,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6c40,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5413,7 +5414,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6ce0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5424,10 +5425,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6d80,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5435,7 +5436,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6e20,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5443,7 +5444,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x6ec0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5454,10 +5455,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x6f60,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5465,7 +5466,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x7000,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5473,7 +5474,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x70a0,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5484,10 +5485,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x7140,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5495,7 +5496,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x71e0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5503,7 +5504,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x7280,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5514,10 +5515,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x7320,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5525,7 +5526,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x73c0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5533,7 +5534,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x7460,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5544,10 +5545,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x7500,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5555,7 +5556,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x75a0,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5563,7 +5564,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x7640,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5574,10 +5575,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x76e0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5585,7 +5586,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x7780,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5593,7 +5594,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x7820,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5604,10 +5605,10 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x78c0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5615,7 +5616,7 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x7960,x
               tya
-              adc     dp:.tiny (DC_SI+1)
+              adc     dp:.tiny (RS_SI+1)
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5623,7 +5624,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x7a00,x
               xba
-              adc     dp:.tiny (DC_SF+1)
+              adc     dp:.tiny (RS_SF+1)
               xba
               tya
               adc     dp:.tiny DC_ROW
@@ -5634,10 +5635,10 @@ texImgU:      xba
               lda     [.tiny DC_CMB]
               sta     abs:0x7aa0,x
               xba
-              adc     dp:.tiny DC_SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny DC_SRC],y
@@ -5645,7 +5646,7 @@ texImgU:      xba
               lda     [.tiny DC_CMA]
               sta     abs:0x7b40,x
               tya
-              .byte   0x65, .tiny (DC_SI+1)
+              .byte   0x65, .tiny (RS_SI+1)
 
 ;;; Templates and view-change code fit after the 3/4 row image. Copied
 ;;; helpers use only relative branches and the direct-page entry vector.
@@ -5662,23 +5663,23 @@ nrHStart:     lda     dp:.tiny RL_HA
               sbc     dp:.tiny (RL_HS+1)
 nrHReady:    and     #0x7f
               tay
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               asl     a
-              sta     dp:.tiny (DC_SF+1)
-              lda     dp:.tiny DC_SI
+              sta     dp:.tiny (RS_SF+1)
+              lda     dp:.tiny RS_SI
               adc     #0
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               lda     dp:.tiny RL_TENT
               lsr     a
               bcs     nrHEnter
               xba
               sec
-              sbc     dp:.tiny DC_SF
+              sbc     dp:.tiny RS_SF
               xba
               tya
               sbc     #0
-              bit     dp:.tiny DC_SF
+              bit     dp:.tiny RS_SF
               bpl     nrHRound
               inc     a
 nrHRound:    and     #0x7f
@@ -5695,18 +5696,18 @@ nrHEnd:
 
 nrTStart:
               tay
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               asl     a
               sta     dp:.tiny SP_AF
-              lda     dp:.tiny DC_SI
+              lda     dp:.tiny RS_SI
               rol     a
               and     #0x7f
               sta     dp:.tiny SP_AI
               lda     dp:.tiny SP_AF
               clc
-              adc     dp:.tiny DC_SF
-              sta     dp:.tiny (DC_SF+1)
-              lda     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SF
+              sta     dp:.tiny (RS_SF+1)
+              lda     dp:.tiny RS_SI
               adc     #0
               bit     dp:.tiny SP_AF
               bpl     nrTSecond
@@ -5718,7 +5719,7 @@ nrTSecond: and     #0x7f
               lda     dp:.tiny SP_AI
               adc     #0
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               lda     dp:.tiny RL_TENT
               lsr     a
               bcc     nrTOdd
@@ -5747,18 +5748,18 @@ nrTEnd:
 
 nrUStart:
               tay
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               asl     a
               sta     dp:.tiny SP_AF
-              lda     dp:.tiny DC_SI
+              lda     dp:.tiny RS_SI
               rol     a
               and     #0x7f
               sta     dp:.tiny SP_AI
               lda     dp:.tiny SP_AF
               clc
-              adc     dp:.tiny DC_SF
-              sta     dp:.tiny (DC_SF+1)
-              lda     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SF
+              sta     dp:.tiny (RS_SF+1)
+              lda     dp:.tiny RS_SI
               adc     #0
               bit     dp:.tiny SP_AF
               bpl     nrUSecond
@@ -5770,7 +5771,7 @@ nrUSecond: and     #0x7f
               lda     dp:.tiny SP_AI
               adc     #0
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               lda     dp:.tiny RL_HA
               and     #3
               cmp     #1
@@ -6175,22 +6176,22 @@ uSet:         php
               jmp     .kbank nrUSet
               .extern pixQuarter, quarterOvlRow, pixThreequarter, threequarterOvlRow
 
-;;; Full-view row pairs use two text-page exit words during replay only.
+;;; Full-view row pairs use two reserved bank-0 exit words during replay only.
 ;;; The first operand byte is ADC's opcode, so these words end in $65.
               .section paircode, text
-pairBegin:    lda     long:0x000565
+pairBegin:    lda     long:RS_PAIR
               pha
-              lda     long:0x000765
+              lda     long:RS_SHORT
               pha
               lda     ##.word0 texContinue
-              sta     long:0x000565
+              sta     long:RS_PAIR
               lda     ##.word0 pairContinueShort
-              sta     long:0x000765
+              sta     long:RS_SHORT
               brl     pairBeginDone
 pairEnd:      pla
-              sta     long:0x000765
+              sta     long:RS_SHORT
               pla
-              sta     long:0x000565
+              sta     long:RS_PAIR
               brl     pairEndDone
 
 ;;; Mode $0100 is the full-view pair image; 0 is a constant-step window.
@@ -6248,7 +6249,7 @@ pairPatch:
               sta     abs:.word0 (texBlocks+13),y
               lda     long:(texImgH+18),x
               sta     abs:.word0 (texBlocks+14),y
-              lda     #.tiny (DC_SI+1)
+              lda     #.tiny (RS_SI+1)
               sta     abs:.word0 (texBlocks+2),y
               lda     long:(texImgH+19),x
               sta     abs:.word0 (texBlocks+15),y
@@ -6288,7 +6289,7 @@ pairPatch:
               sta     abs:.word0 (texBlocks+32),y
               lda     long:(texImgH+37),x
               sta     abs:.word0 (texBlocks+33),y
-              lda     #.tiny (DC_SF+1)
+              lda     #.tiny (RS_SF+1)
               sta     abs:.word0 (texBlocks+17),y
               rep     #0x20
               txa
@@ -6309,7 +6310,7 @@ pairPatchDone:
               sta     abs:.word0 texBlocks,y
               lda     #0x65
               sta     abs:.word0 (texBlocks+1),y
-              lda     #.tiny (DC_SI+1)
+              lda     #.tiny (RS_SI+1)
               sta     abs:.word0 (texBlocks+2),y
               rep     #0x20
               ldx     ##0
@@ -6343,23 +6344,23 @@ spSelect:     brl     pairMake
 ;;; In: adjusted TI in A, pre-row fraction in RL_HP. SF/SI are already
 ;;; scaled to the window; their spare high bytes hold the paired steps.
 spConstTail:  tay
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               asl     a
-              sta     dp:.tiny (DC_SF+1)
-              lda     dp:.tiny DC_SI
+              sta     dp:.tiny (RS_SF+1)
+              lda     dp:.tiny RS_SI
               adc     #0
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               lda     dp:.tiny RL_TENT
               lsr     a
               bcs     spEvenStart
               lda     dp:.tiny RL_HP
               sec
-              sbc     dp:.tiny DC_SF
+              sbc     dp:.tiny RS_SF
               xba
               tya
               sbc     #0
-              bit     dp:.tiny DC_SF
+              bit     dp:.tiny RS_SF
               bpl     spConstRound
               inc     a
 spConstRound: and     #0x7f
@@ -6380,106 +6381,106 @@ SP_AI         .equ    DC_COUNT+1
 SP_SECOND     .equ    DC_ROW
 
 spBeginH:
-              lda     long:0x000565
+              lda     long:RS_PAIR
               pha
-              lda     long:0x000765
+              lda     long:RS_SHORT
               pha
               lda     ##.word0 halfCont
-              sta     long:0x000565
+              sta     long:RS_PAIR
               lda     ##.word0 spShortH
-              sta     long:0x000765
+              sta     long:RS_SHORT
               brl     spBeginDoneH
 spEndH:
               pla
-              sta     long:0x000765
+              sta     long:RS_SHORT
               pla
-              sta     long:0x000565
+              sta     long:RS_PAIR
               brl     spEndDoneH
 spShortH:    rep     #0x10
               lda     #0x98
               brl     halfCont+4
 
 spBeginT:
-              lda     long:0x000565
+              lda     long:RS_PAIR
               pha
-              lda     long:0x000765
+              lda     long:RS_SHORT
               pha
               lda     ##.word0 tCont
-              sta     long:0x000565
+              sta     long:RS_PAIR
               lda     ##.word0 spShortT
-              sta     long:0x000765
+              sta     long:RS_SHORT
               brl     spBeginDoneT
 spEndT:
               pla
-              sta     long:0x000765
+              sta     long:RS_SHORT
               pla
-              sta     long:0x000565
+              sta     long:RS_PAIR
               brl     spEndDoneT
 spShortT:    rep     #0x10
               lda     #0x98
               brl     tCont+4
 
 spBeginO:
-              lda     long:0x000565
+              lda     long:RS_PAIR
               pha
-              lda     long:0x000765
+              lda     long:RS_SHORT
               pha
               lda     ##.word0 oneCont
-              sta     long:0x000565
+              sta     long:RS_PAIR
               lda     ##.word0 spShortO
-              sta     long:0x000765
+              sta     long:RS_SHORT
               brl     spBeginDoneO
 spEndO:
               pla
-              sta     long:0x000765
+              sta     long:RS_SHORT
               pla
-              sta     long:0x000565
+              sta     long:RS_PAIR
               brl     spEndDoneO
 spShortO:    rep     #0x10
               lda     #0x98
               brl     oneCont+4
 
 spBeginQ:
-              lda     long:0x000565
+              lda     long:RS_PAIR
               pha
-              lda     long:0x000765
+              lda     long:RS_SHORT
               pha
               lda     ##.word0 qCont
-              sta     long:0x000565
+              sta     long:RS_PAIR
               lda     ##.word0 spShortQ
-              sta     long:0x000765
+              sta     long:RS_SHORT
               brl     spBeginDoneQ
 spEndQ:
               pla
-              sta     long:0x000765
+              sta     long:RS_SHORT
               pla
-              sta     long:0x000565
+              sta     long:RS_PAIR
               brl     spEndDoneQ
 spShortQ:    rep     #0x10
               lda     #0x98
               brl     qCont+4
 
 spBeginU:
-              lda     long:0x000465
+              lda     long:RS_RET
               pha
-              lda     long:0x000565
+              lda     long:RS_PAIR
               pha
-              lda     long:0x000765
+              lda     long:RS_SHORT
               pha
               lda     ##.word0 uCont
-              sta     long:0x000465
+              sta     long:RS_RET
               lda     ##.word0 uCont
-              sta     long:0x000565
+              sta     long:RS_PAIR
               lda     ##.word0 spShortU
-              sta     long:0x000765
+              sta     long:RS_SHORT
               brl     spBeginDoneU
 spEndU:
               pla
-              sta     long:0x000765
+              sta     long:RS_SHORT
               pla
-              sta     long:0x000565
+              sta     long:RS_PAIR
               pla
-              sta     long:0x000465
+              sta     long:RS_RET
               brl     spEndDoneU
 spShortU:    rep     #0x10
               lda     #0x98
@@ -6490,18 +6491,18 @@ spShortU:    rep     #0x10
 ;;; remaining integer part and carry are applied by its second row.
 spTailT:
               tay
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               asl     a
               sta     dp:.tiny SP_AF
-              lda     dp:.tiny DC_SI
+              lda     dp:.tiny RS_SI
               rol     a
               and     #0x7f
               sta     dp:.tiny SP_AI
               lda     dp:.tiny SP_AF
               clc
-              adc     dp:.tiny DC_SF
-              sta     dp:.tiny (DC_SF+1)
-              lda     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SF
+              sta     dp:.tiny (RS_SF+1)
+              lda     dp:.tiny RS_SI
               adc     #0
               bit     dp:.tiny SP_AF
               bpl     spSecondT
@@ -6513,7 +6514,7 @@ spSecondT: and     #0x7f
               lda     dp:.tiny SP_AI
               adc     #0
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               lda     dp:.tiny RL_TENT
               lsr     a
               bcc     spOddT
@@ -6537,18 +6538,18 @@ spStartT:  and     #0x7f
 ;;; remaining integer part and carry are applied by its second row.
 spTailU:
               tay
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               asl     a
               sta     dp:.tiny SP_AF
-              lda     dp:.tiny DC_SI
+              lda     dp:.tiny RS_SI
               rol     a
               and     #0x7f
               sta     dp:.tiny SP_AI
               lda     dp:.tiny SP_AF
               clc
-              adc     dp:.tiny DC_SF
-              sta     dp:.tiny (DC_SF+1)
-              lda     dp:.tiny DC_SI
+              adc     dp:.tiny RS_SF
+              sta     dp:.tiny (RS_SF+1)
+              lda     dp:.tiny RS_SI
               adc     #0
               bit     dp:.tiny SP_AF
               bpl     spSecondU
@@ -6560,7 +6561,7 @@ spSecondU: and     #0x7f
               lda     dp:.tiny SP_AI
               adc     #0
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               lda     dp:.tiny RL_HA
               and     #3
               cmp     #1
@@ -6605,23 +6606,23 @@ nrOOne:       xba
               sbc     dp:.tiny (RL_HS+1)
 nrOReady:    and     #0x7f
               tay
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               asl     a
-              sta     dp:.tiny (DC_SF+1)
-              lda     dp:.tiny DC_SI
+              sta     dp:.tiny (RS_SF+1)
+              lda     dp:.tiny RS_SI
               adc     #0
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               lda     dp:.tiny RL_TENT
               lsr     a
               bcs     nrOEnter
               xba
               sec
-              sbc     dp:.tiny DC_SF
+              sbc     dp:.tiny RS_SF
               xba
               tya
               sbc     #0
-              bit     dp:.tiny DC_SF
+              bit     dp:.tiny RS_SF
               bpl     nrORound
               inc     a
 nrORound:    and     #0x7f
@@ -6668,23 +6669,23 @@ nrQOne:       xba
               sbc     dp:.tiny (RL_HS+1)
 nrQReady:    and     #0x7f
               tay
-              lda     dp:.tiny DC_SF
+              lda     dp:.tiny RS_SF
               asl     a
-              sta     dp:.tiny (DC_SF+1)
-              lda     dp:.tiny DC_SI
+              sta     dp:.tiny (RS_SF+1)
+              lda     dp:.tiny RS_SI
               adc     #0
               and     #0x7f
-              sta     dp:.tiny (DC_SI+1)
+              sta     dp:.tiny (RS_SI+1)
               lda     dp:.tiny RL_TENT
               lsr     a
               bcs     nrQEnter
               xba
               sec
-              sbc     dp:.tiny DC_SF
+              sbc     dp:.tiny RS_SF
               xba
               tya
               sbc     #0
-              bit     dp:.tiny DC_SF
+              bit     dp:.tiny RS_SF
               bpl     nrQRound
               inc     a
 nrQRound:    and     #0x7f
@@ -6772,3 +6773,26 @@ nrBack3:
               .byte   1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1
               .byte   2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2, 0, 1, 2
               .byte   0, 1, 2, 0, 1, 2, 0, 1, 2
+
+;;; Only a record-pool overflow can interrupt live producer scratch. The
+;;; normal final replay runs after production and needs no extra save.
+;;; Fuzz replay uses drawer inputs, not these BSP/sprite scratch bytes.
+              .section replayguard, text
+flushReplay:  lda     dp:.tiny RS_SF
+              pha
+              lda     dp:.tiny RS_SI
+              pha
+              jsl     long:drawAllL
+              pla
+              sta     dp:.tiny RS_SI
+              pla
+              sta     dp:.tiny RS_SF
+              rtl
+
+;;; Reserve all three operand-derived words explicitly in the linker.
+              .section replayret, text, root
+              .space 2
+              .section replaypair, text, root
+              .space 2
+              .section replayshort, text, root
+              .space 2

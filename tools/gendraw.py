@@ -71,10 +71,10 @@ def tex_blocks(w):
     for r in range(ROWS):
         cm = 'CMA' if r % 2 == 0 else 'CMB'
         w(f'''              xba                       ; row {r}
-              adc     dp:.tiny SF
+              adc     dp:.tiny RS_SF
               xba
               tya
-              adc     dp:.tiny SI
+              adc     dp:.tiny RS_SI
               and     #0x7f
               tay
               lda     [.tiny SRC],y
@@ -96,10 +96,10 @@ def tex_blocks_third(w):
         cm = 'CMA' if y % 2 == 0 else 'CMB'
         ofs.append(o)
         if k % 2 == 0:
-            w('              tya\n              adc     dp:.tiny (SI+1)')
+            w('              tya\n              adc     dp:.tiny (RS_SI+1)')
             o += 15
         else:
-            w('              xba\n              adc     dp:.tiny (SF+1)\n              xba\n              tya\n              adc     dp:.tiny ROW')
+            w('              xba\n              adc     dp:.tiny (RS_SF+1)\n              xba\n              tya\n              adc     dp:.tiny ROW')
             o += 19
         w(f"""              and     #0x7f
               tay
@@ -124,6 +124,7 @@ def main():
               .rtmodel core, "*"
 
 #include "lists.inc"
+#include "replay.inc"
 
               .extern _Dp, _Mul16, IIGS_MulLo16, fullcolormap
               .extern recTex, fillCol
@@ -341,10 +342,10 @@ scRowTab:''')
 ;;; src/iigs/r_list65.s) patches the block after its last row to RTS and
 ;;; back.
 ;;; Texture blocks, one for each row. 8-bit A, X, Y, B = TF, Y = TI, DBR =
-;;; buffer bank, carry clear. Each block starts with XBA, ADC dp:SF (EB 65
-;;; 04), so does the one after the last row (entry {{ROWS}}). The caller
+;;; buffer bank, carry clear. Each block starts with XBA, ADC dp:RS_SF (EB 65
+;;; 84), so does the one after the last row (entry {{ROWS}}). The caller
 ;;; (drawTex of src/iigs/r_list65.s) patches the block after its last row to
-;;; JMP ($0465) (6C 65 04), and back.
+;;; JMP ($8465) (6C 65 84), and back.
 ;;; ---------------------------------------------------------------------------
               .section hotdraw, text     ; (cache slots $0B00-, src/iigs/iigs.scm)
 flatBlocks:''')
@@ -354,7 +355,7 @@ flatBlocks:''')
     w('texBlocks:')
     tex_blocks(w)
     w('''              xba
-              .byte   0x65, .tiny SF
+              .byte   0x65, .tiny RS_SF
 
 
 ;;; ---------------------------------------------------------------------------
@@ -366,22 +367,21 @@ flatBlocks:''')
 texImgH:''')
     tex_blocks(w)
     w(f'''              xba
-              .byte   0x65, .tiny SF
+              .byte   0x65, .tiny RS_SF
 TEXIMG_SIZE   .equ    . - texImgH
-              .space  {LOW_IMG_SIZE + 2 * (ROWS + 1)} ; (the old low detail image and
-                                            ;   its entries: no code after them moves)
+              .space  {LOW_IMG_SIZE + 2 * (ROWS + 1)} ; preserve following cache slots
 ''')
     w('''
 
 ;;; The image of the 2/3 view (R_SetThird of src/iigs/r_list65.s copies it
 ;;; into texBlocks): its texture blocks, then its fill blocks at
-;;; TEXT_FLATOFS (the byte of each screen row's parity, as flatBlocks). Own
-;;; section: in detailimg it moved the code after it.
+;;; TEXT_FLATOFS (the byte of each screen row's parity, as flatBlocks).
+;;; A separate section keeps this image out of detailimg's reserved layout.
               .section thirdimg, text
 texImgT:''')
     tofs = tex_blocks_third(w)
     w('''              tya
-              .byte   0x65, .tiny (SI+1)
+              .byte   0x65, .tiny (RS_SI+1)
               .space  2579 - (. - texImgT)
 TEXT_FLATOFS  .equ    . - texImgT''')
     for k in range(T_ROWS):

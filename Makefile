@@ -95,7 +95,7 @@ $(BUILD)/gen/drawcol.s: tools/gendraw.py Makefile $(DEFSTAMP)
 	mkdir -p $(BUILD)/gen
 	$(PYTHON) tools/gendraw.py $@ 0 0 84
 
-$(OBJ)/drawcol.o: $(BUILD)/gen/drawcol.s src/iigs/lists.inc | $(OBJ)
+$(OBJ)/drawcol.o: $(BUILD)/gen/drawcol.s src/iigs/lists.inc src/iigs/replay.inc | $(OBJ)
 	$(AS) $(ASFLAGS) -I src/iigs -o $@ $<
 
 # The ENDOOM page of the exit, as 80-column text
