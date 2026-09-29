@@ -175,6 +175,8 @@ IIGS_Alarm:   php
               sta     long:SOUNDADRL
               lda     long:SOUNDDATA        ; the first read only starts the access
               lda     long:SOUNDDATA
+2$:           lda     long:SOUNDCTL         ; busy clear, then address and data
+              bmi     2$                    ;   with nothing between them
               lda     #(0xa0 + ALARM_OSC)
               sta     long:SOUNDADRL
               lda     #ALARM_CTL
@@ -243,7 +245,11 @@ IIGS_DocWrite2:
               sta     long:SOUNDADRL
               lda     dp:.tiny _Dp
               sta     long:SOUNDDATA
-              lda     dp:.tiny (_Dp+1)
+              lda     dp:.tiny (_Dp+1)      ; the next byte waits until this
+              pha                           ;   one has left the latch
+2$:           lda     long:SOUNDCTL
+              bmi     2$
+              pla
               sta     long:SOUNDDATA
               plp
               rtl
