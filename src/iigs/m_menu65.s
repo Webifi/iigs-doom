@@ -34,7 +34,7 @@
               .extern I_Error, _Mul32, _UDivMod32, P_SetupLevel, IIGS_StopInterrupts
               .extern IIGS_StartInterrupts, G_SettingsChanged, I_MarkRect, I_ShowDirty
               .extern IIGS_ZipOff, IIGS_ZipBack, _g_gamemap, _g_gameaction
-              .extern LV_BDEMO, I_InitProgress
+              .extern LV_BDEMO, lvSignKind, lvSignPaint
               .extern snd_SfxVolume, snd_MusicVolume
               .extern S_SetSfxVolume, S_SetMusicVolume
               .extern I_MenuPalette, I_MenuPaletteBack, message_on
@@ -1756,7 +1756,8 @@ bmWrite:      pei     dp:.tiny (_Dp+8)
               rts
 
 ;;; ---------------------------------------------------------------------------
-;;; LOADING... and SAVING...: centered red text on black.
+;;; LOADING and SAVING...: centered red text on black.
+;;; LOADING has no dots: its bar shows the progress.
 ;;; ---------------------------------------------------------------------------
 BUSY_MARGIN   .equ    4               ; black pixels around the text (bmMargin)
 BUSY_H        .equ    24              ; its height: 2 x 8 font rows + 2 margins
@@ -1766,7 +1767,7 @@ BUSY_SAVE     .equ    MM_BUSY         ; the rows of the sign as they were: the
 BUSY_BACK     .equ    (BUSY_SAVE + BUSY_BAND) ;   screen, the back buffer
 BUSY_PATCH    .equ    (BUSY_BACK + BUSY_BAND) ; the sign as a patch (MM_BUSY: 16 KB)
 SHR_PIX       .equ    0xe12000
-txLoading:    .asciz  "LOADING..."
+txLoading:    .asciz  "LOADING"
 txSaving:     .asciz  "SAVING..."
 txInsert:     .ascii  "INSERT DISK "
 txInsertN:    .asciz  "1"                   ; (bmDiskAsk writes the digit)
@@ -1792,7 +1793,6 @@ bmLoad:       pha
               beq     2$
               lda     ##0                   ; STZ has no long address
               sta     long:LV_BDEMO
-              jsl     long:I_InitProgress   ; a cell, if the bar is still up
               bra     3$
 2$:           lda     ##.word0 txLoading
               jsl     long:bmSignOn
@@ -1820,10 +1820,17 @@ bmDiskOff:    jsl     long:IIGS_StartInterrupts
 ;;; bmSignOn: the sign with the text at C (in this bank). The first time the
 ;;; rows of the sign are saved; a new text while the sign is on puts them
 ;;; back first, so any text width works (the level loader: "INSERT DISK n",
-;;; then "LOADING..." again). bmSignOff: the rows as they were. A/X/Y 16-bit;
+;;; then "LOADING" again). bmSignOff: the rows as they were. A/X/Y 16-bit;
 ;;; _Dp[8-11] kept. The sign is a patch in RAM: a new WAD lump would move
 ;;; the lumps after it and the bytes of the texture over-reads with them.
 bmSignOn:     pha
+              lda     1,s                   ; LOADING keeps a bar; the other
+              cmp     ##.word0 txLoading    ;   texts (INSERT DISK) do not
+              beq     0$
+              lda     ##0
+              bra     2$
+0$:           lda     ##1
+2$:           jsl     long:lvSignKind
               ldy     ##1                   ; (on: the rows as they were first)
               lda     long:VW_SGON
               bne     1$
@@ -1855,6 +1862,7 @@ bmSignOn:     pha
               sta     dp:.tiny (_Dp+10)
               pla
               sta     dp:.tiny (_Dp+8)
+              jsl     long:lvSignPaint
               rtl
 bmSignOff:    lda     long:VW_SGON
               beq     1$
@@ -1864,18 +1872,18 @@ bmSignOff:    lda     long:VW_SGON
               jsr     .kbank bmSignBox
 1$:           rtl
 ;;; bmDiskAsk: the sign asks for disk C (1-9). bmSignLoading, bmSignSaving:
-;;; "LOADING..." or "SAVING..." again after it.
+;;; "LOADING" or "SAVING..." again after it.
 bmDiskAsk:    sep     #0x20
               clc
               adc     #'0'
               sta     long:txInsertN
               rep     #0x20
               lda     ##.word0 txInsert
-              bra     bmSignOn
+              brl     bmSignOn
 bmSignLoading: lda    ##.word0 txLoading
-              bra     bmSignOn
+              brl     bmSignOn
 bmSignSaving: lda     ##.word0 txSaving
-              bra     bmSignOn
+              brl     bmSignOn
 
 ;;; bmSignBox: Y = 0: the rows of the sign, from the screen and the back
 ;;; buffer to BUSY_SAVE and BUSY_BACK; Y = 1: back. The rows are one run of
