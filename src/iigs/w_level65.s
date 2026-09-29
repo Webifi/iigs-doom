@@ -504,7 +504,8 @@ picBases:     lda     long:(LV_HDR+6)       ; the common set: its banks
 ;;; made in play that goes on into it does not zero 64 KB in a frame
 ;;; (demo2 tic 660 of b7: +62 ms); then bmSignOff.
 ;;; ---------------------------------------------------------------------------
-W_LevelDone:  jsl     long:AM_LevelCache
+              .extern R_LevelLists
+W_LevelDone:  jsl     long:R_LevelLists     ; covered ranges, then automap cache
               jsr     .kbank moreColumns
               lda     long:(colmem+2)
               and     ##0x00ff

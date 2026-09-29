@@ -111,7 +111,8 @@ FSCUTE        .macro  first
 ;;; in the list, as it paints them again. Byte 2c of CV_ROW is the first
 ;;; row, byte 2c + 1 the row after the last (0, 0: no range; 255, 254: none
 ;;; in this frame, as a shadow reads the rows next to its own); word 2c of
-;;; CV_REC is the record. R_DrawLists sets 0, 0 again. Bank $74: the cache
+;;; CV_REC is the record. R_ClearCovered initializes both tables at startup
+;;; and each level; R_DrawLists sets 0, 0 again. Bank $74: the cache
 ;;; does not hold it.
 CV_ROW        .equ    (MM_FS + 0x800)
 CV_REC        .equ    (MM_FS + 0xa00)
