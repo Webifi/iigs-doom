@@ -958,6 +958,11 @@ class ScSong:
                             for u in pool_voices:
                                 m = busy[u]
                                 if m is not None and m.ch == ch and m.r.excl == r.excl and until(m) > tic:
+                                    # E1M1 deliberately layers its two crash keys. The
+                                    # reference retains both attacks; the font's shared
+                                    # class must not discard the earlier same-tic key.
+                                    if self.name == 'D_E1M1' and a in (49,57) and m.key in (49,57) and m.key != a and m.on == tic:
+                                        continue
                                     v = u
                         if v is None:
                             free = [u for u in pool_voices if busy[u] is None or until(busy[u]) <= tic]
