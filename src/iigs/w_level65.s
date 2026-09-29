@@ -29,10 +29,12 @@
               .extern _Dp, I_Error, fileinfo, numlumps, LC_MAP, PR_IOK, bootInfo
               .extern bmDiskOn, bmDiskOff, IIGS_CopyHuge, memset, W_GetNumForName
               .extern bmDiskAsk, bmSignLoading, bmSignSaving, bmSignOff
+              .extern I_InitProgress
               .extern WI_Start, F_StartFinale, AM_LevelCache, colmem
               .extern switchlist, animated_texture_basepic, R_MakeTextureColumns
               .public W_InitLevels, W_LoadSet, W_NeedDisk, W_ZeroBank, W_NEXTBANK
               .public W_COLSTART, W_SET, W_StartInter, W_StartFinale, W_NextDemo
+              .public LV_BDEMO
               .extern musTitle, musInter, musFinale
               .public W_LevelDone
               .public lvRead, lvStatus, lvEject, lvDib
@@ -162,6 +164,7 @@ W_InitLevels:
               sta     long:(LV_DK+2)
               lda     ##1                   ; the boot loader left the title
               sta     long:LV_BOOTT         ;   in gray (src/iigs/loader.s)
+              sta     long:LV_BDEMO         ; the first demo map: no sign
               lda     ##MM_WINDOW           ; the window: MM_WINDOW..$3F,
 3$:           jsr     .kbank addWin         ;   then the extra banks
               inc     a
@@ -317,8 +320,10 @@ W_LoadSet:    cmp     long:LV_SET
               and     ##0x00ff
               bne     2$
               lda     1,s                   ; a picture set: the LOADING sign
-              cmp     ##TITLE_SET           ;   (a map has it from bmLoad)
-              bcc     11$
+              cmp     ##TITLE_SET           ;   (a map has it from bmLoad).
+              bcc     11$                   ;   Not the boot title: the bar
+              lda     long:LV_BOOTT         ;   covers that load.
+              bne     11$
               jsl     long:bmSignLoading
 11$:          jsl     long:bmDiskOn
               lda     ##0                   ; the drives: look again
@@ -340,6 +345,7 @@ W_LoadSet:    cmp     long:LV_SET
               lda     ##1
               sta     long:LV_COMMON
               jsr     .kbank picBases
+              jsl     long:I_InitProgress   ; a cell while this load reads
 21$:          lda     1,s                   ; the record of the set: the
               dec     a                     ;   intermission set on the disk of
               cmp     ##(INTER_SET - 1)     ;   the map before (a copy on each
@@ -434,9 +440,11 @@ W_LoadSet:    cmp     long:LV_SET
               jsr     .kbank picBit
               ora     long:LV_PICOK
               sta     long:LV_PICOK
+              jsl     long:I_InitProgress   ; last cell of a boot picture
               rtl
 9$:           pla
               sta     long:LV_SET
+              jsl     long:I_InitProgress   ; last cell of this boot load
               rtl
 
 ;;; picBit: C = the bit of picture set C in LV_PICOK (1 the title, 2 the
@@ -1916,7 +1924,8 @@ LV_SONGDO     .equ    0x008cc6
 LV_SONGPTR    .equ    0x008cc8
 LV_SONGLEN    .equ    0x008ccc
 LV_CACHE      .equ    0x008cd0        ; eight compressed VICTOR chunk pointers
-LV_END        .equ    0x008cf0        ; (the end of the variables)
+LV_BDEMO      .equ    0x008cf0        ; 1 until the boot demo's map loads
+LV_END        .equ    0x008cf2        ; (the end of the variables)
 
 ;;; ---------------------------------------------------------------------------
 ;;; The firmware of the slot needs bank 0 code, D = 0, emulation mode and a

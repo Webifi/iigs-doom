@@ -40,7 +40,9 @@ each of them. --picture-file FILE@ADDR gives the picture as a file.
 up to HDR_RESDISKS at boot and reads the store blocks when a level starts
 (src/iigs/w_level65.s): HDR_STOREMAP in each header gives each run of
 store blocks (the first store block, the count, the first disk block, the
-disk), HDR_STOREBANKS the banks of the store.
+disk), HDR_STOREBANKS the banks of the store. The header's bar step is two
+bytes: the blocks a boot reads when the store stays on disk, then the
+blocks when the store loads. The hard disk volume has its own pair.
 
 Usage:
   mkdisk.py --boot boot.raw --loader loader.raw --elf doom.elf
@@ -78,6 +80,8 @@ PIC_ORDER = 448                 # the picture block order
 MAX_SEGMENTS = (HDR_STOREMAP - 16) // 8
 LOAD_CELLS = 34                 # the cells of the load bar for the load,
                                 #   as LOAD_CELLS of src/iigs/loadbar.inc
+STORE_BANK = 0x40               # loader.s skips this bank and above when
+                                #   the store is not in RAM
 SEG_PIC = 1
 SEG_B1 = 2                      # the segment is the B1 stream of its data
                                 #   (tools/b1.py: u16 the length, then B1)
@@ -480,9 +484,6 @@ def main():
     if args.compress:
         runs = compress_runs(runs, store[0] if store else 1 << 24, args.b1cache)
     total_blocks = sum(len(r[1]) // BLOCK for r in runs) + (PIC_BLOCKS if pic is not None else 0)
-    step = max(1, -(-total_blocks // LOAD_CELLS))
-    if step > 255:
-        sys.exit('too much data for the progress bar step')
 
     # Split the runs over disks: (address, data, flags) segments. Disk 1
     # holds DOOM.SETTINGS too.
@@ -546,9 +547,15 @@ def main():
     send = store[0] + len(store[1]) if store else 1 << 24
     resdisks = max([n for n, segs in enumerate(disks, 1) if any(a < sbase for a, _, _ in segs)] or [1])
     sbanks = -(-len(store[1]) // 0x10000) if store else 0
-    common = dict(stamp=stamp, boot=boot, loader=loader, entry=entry, step=step, build=build,
+    common = dict(stamp=stamp, boot=boot, loader=loader, entry=entry, build=build,
                   sbase=sbase, send=send, resdisks=resdisks, sbanks=sbanks)
     common['boot_aliases'] = song_aliases(store, boot_song) if boot_song else []
+    # Two steps for the floppies: the blocks a boot reads when the store
+    # stays on disk, and the blocks when it loads. The hard disk volume
+    # gets its own pair below: it reads a different set.
+    aliases = common['boot_aliases']
+    common['step'] = bar_step(boot_read_blocks(disks, resdisks, aliases, False))
+    common['step_ram'] = bar_step(boot_read_blocks(disks, resdisks, aliases, True))
 
     # the store map: for each disk its store blocks (the data file of each
     # disk starts at the first free block after the loader)
@@ -577,13 +584,17 @@ def main():
         if hd_store:
             hd.update(sbase=hd_store[0], send=hd_store[0] + len(hd_store[1]),
                       sbanks=-(-len(hd_store[1]) // 0x10000))
+        hd['step'] = bar_step(boot_read_blocks([segs], 1, hd['boot_aliases'], False))
+        hd['step_ram'] = bar_step(boot_read_blocks([segs], 1, hd['boot_aliases'], True))
         img = volume('DOOM', (blocks + 7) & ~7, segs, 1, 1, 'DOOM.DATA', README_HD, args.hd,
                      smap=None, **hd)
         open(args.hd, 'wb').write(img)
         if args.scsi:
             open(args.scsi, 'wb').write(partitioned(img))
             print(f'{args.scsi}: the volume at block {APM_PART} of an Apple partition map')
-    print(f'entry ${entry:06X}, {total_blocks} blocks, {len(disks)} disk(s), build {build:08X}')
+    hd_note = f', hd bar step {hd["step"]}/{hd["step_ram"]}' if args.hd else ''
+    print(f'entry ${entry:06X}, {total_blocks} blocks, {len(disks)} disk(s), '
+          f'build {build:08X}, bar step {common["step"]}/{common["step_ram"]}{hd_note}')
 
 
 def partitioned(volume_img):
@@ -641,8 +652,33 @@ def song_aliases(store, song):
     raise ValueError('INTRO boot song not found in the store')
 
 
+def bar_step(blocks):
+    """Blocks per load-bar cell. The loader fills LOAD_CELLS cells, one
+    every this many blocks, then fills any shortfall at once."""
+    step = max(1, -(-blocks // LOAD_CELLS))
+    if step > 255:
+        sys.exit('too much data for the progress bar step')
+    return step
+
+
+def boot_read_blocks(disks, resdisks, aliases, store):
+    """Blocks the loader reads at boot. Without the store in RAM: every
+    segment on disks 1..resdisks whose bank is below STORE_BANK. With it:
+    every segment on every disk. Plus the boot-song aliases (extra reads)
+    and the DOOM.SETTINGS block on disk 1."""
+    n = 0
+    use = disks if store else disks[:resdisks]
+    for segs in use:
+        for addr, payload, _flags in segs:
+            if store or (addr >> 16) < STORE_BANK:
+                n += len(payload) // BLOCK
+    n += sum(count for _dest, _src, count in aliases)
+    n += 1
+    return n
+
+
 def volume(name, blocks, segs, num, ndisks, dataname, readme, out, stamp, boot, loader, entry,
-           step, build, sbase, send, resdisks, sbanks, smap, boot_aliases=()):
+           step, step_ram, build, sbase, send, resdisks, sbanks, smap, boot_aliases=()):
     """The ProDOS volume image of disk num of ndisks with the segments segs
     (address, data, flags): the boot block, the header, DOOM.BOOT, the data
     file, DOOM.SETTINGS on disk 1, README."""
@@ -674,7 +710,7 @@ def volume(name, blocks, segs, num, ndisks, dataname, readme, out, stamp, boot, 
     hdr[6] = num
     hdr[7] = ndisks
     struct.pack_into('<I', hdr, 10, entry & 0xffffff)
-    struct.pack_into('<H', hdr, 14, step)
+    struct.pack_into('<BB', hdr, 14, step, step_ram)
     struct.pack_into('<I', hdr, HDR_BUILD, build)
     block = first
     headsegs = []

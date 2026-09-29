@@ -267,6 +267,7 @@ main:         sep     #0x20
               jsl     long:IIGS_InitFstep
               jsl     long:I_InitProgress   ; a cell of the load bar
               jsl     long:R_InitSpriteScales
+              jsl     long:I_InitProgress   ; the next cell, loader picture still up
               jsl     long:R_CheckSegPage
               cmp     ##0
               beq     1$
