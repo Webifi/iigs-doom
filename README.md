@@ -10,13 +10,15 @@ With no real IIgs available, development started on MAME's IIgs emulator. Iterat
 
 There are compromises: a 160 x 168 view with double-wide pixels, reduced color palettes with dithering, flat-colored floors and ceilings, and less precise math where it seemed to have little effect. Walls keep their textures and lighting, but they're pretty ugly.
 
-A lot of time was spent trying to work around the assumed single-entry write buffer of the ZipGS. The idea was to keep cached reads and register operations going after an 8-bit store to the slower motherboard bus and then avoiding as many stores as possible.  (The accelerators may just stall immediately on store, so the optimizations could be all for naught.)
+A lot of time was spent trying to work around the assumed single-entry write buffer of the ZipGS. The idea was to keep cached reads and register operations going after an 8-bit store to the slower motherboard bus and then avoiding as many stores as possible.
 
-In the end, all I could get was a chunky ~4 FPS on my emulated IIgs with 8 MB and a 12 MHz ZipGS.  Without an accelerator, it would be more like seconds per frame.  That is, if it even runs at all on real metal.
-
-I still haven't tried it on an actual IIgs with a real ZipGS accelerator.
+In the end, all I could get was a chunky ~4 FPS on my emulated IIgs with 8 MB and a 12 MHz ZipGS.  Without an accelerator, it would be more like seconds per frame.
 
 So, *can it play Doom?*  I guess that depends on how you define "play".  Maybe?  Give it a try and let me know.
+
+# Does it work on a real IIgs?
+
+Seems so.  Thanks to bug reports from u/BenJets, u/chrisparana, and others in the Apple II community, it now loads and runs on real hardware at the predicted framerates.
 
 # Wanna try?
 
