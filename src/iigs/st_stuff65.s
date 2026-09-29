@@ -15,6 +15,9 @@
               .extern V_NumPatchWidth, V_DrawNumPatchNotScaled, V_DrawRaw
               .extern I_SaveStatusBackground, I_RestoreStatusRect, I_SetPalette
               .extern IIGS_MulLo16, _Div16, _UDivMod16
+              .extern I_GetTime, TINTPAL, _g_gamemap, _g_gamma
+              .extern tintPeak, tintLeft, tintShow, tintUntil
+              .extern tintMark, tintMarkG, tintSave, tintOut, tintC0, tintC8
 
 PL            .equ    _g_player
 ST_Y          .equ    168             ; SCREENHEIGHT - ST_HEIGHT
@@ -1103,8 +1106,9 @@ drawDigit:    pha
 ;;; ---------------------------------------------------------------------------
               .public ST_doPaletteStuff
 ST_doPaletteStuff:
-              lda     .near (PL+OFS_PL_DAMAGECOUNT)
-              sta     .near ST_T
+              jsl     long:tintDecide       ; same length as the old lda/sta
+              rtl
+              nop
               lda     .near (PL+OFS_PL_POWERS+2*CONST_PW_STRENGTH)
               beq     1$
               lsr     a                     ; bzc = 12 - (strength >> 6)
@@ -1208,3 +1212,258 @@ stHide:       ldx     ##(ST_Y * 160)
               ldy     ##(0 | (159 << 8))
               jsl     long:I_MarkRect
 3$:           rtl
+
+;;; ---------------------------------------------------------------------------
+;;; The drawn tint. damagecount still falls one per tic; a frame samples
+;;; the strongest count since the previous frame and keeps a new red up
+;;; for two drawn frames or 14 real tics (0.4 s), whichever is longer.
+;;; Palette 8 is flattened to one red by the 16 view colors, so the row
+;;; that is copied is three quarters of that red and one quarter of the
+;;; ordinary view. Bank 5, after the level loader: nothing else moves.
+;;; ---------------------------------------------------------------------------
+TINT_FRAMES   .equ    2
+TINT_REALTICS .equ    14
+TINT8_OFF     .equ    (8 * 384)
+              .section tintcode, text
+              .public notePeak, tintDecide
+notePeak:     sta     .near (PL+OFS_PL_DAMAGECOUNT)
+              cmp     .near tintPeak
+              bcc     1$
+              sta     .near tintPeak
+1$:           sec
+              rtl
+
+tintDecide:   lda     .near (PL+OFS_PL_DAMAGECOUNT)
+              cmp     .near tintPeak
+              bcs     0$
+              lda     .near tintPeak
+0$:           stz     .near tintPeak
+              sta     .near ST_T
+              lda     .near (PL+OFS_PL_POWERS+2*CONST_PW_STRENGTH)
+              beq     1$
+              lsr     a
+              lsr     a
+              lsr     a
+              lsr     a
+              lsr     a
+              lsr     a
+              eor     ##0xffff
+              sec
+              adc     ##12
+              cmp     .near ST_T
+              beq     1$
+              bmi     1$
+              sta     .near ST_T
+1$:           lda     .near ST_T
+              beq     3$
+              clc
+              adc     ##7
+              cmp     ##0x8000
+              ror     a
+              cmp     ##0x8000
+              ror     a
+              cmp     ##0x8000
+              ror     a
+              cmp     ##NUMREDPALS
+              bmi     2$
+              lda     ##(NUMREDPALS - 1)
+2$:           ldx     .near _g_menuactive
+              beq     21$
+              cmp     ##0x8000
+              ror     a
+21$:          clc
+              adc     ##STARTREDPALS
+              bra     6$
+3$:           lda     .near (PL+OFS_PL_BONUSCOUNT)
+              beq     4$
+              clc
+              adc     ##7
+              cmp     ##0x8000
+              ror     a
+              cmp     ##0x8000
+              ror     a
+              cmp     ##0x8000
+              ror     a
+              cmp     ##NUMBONUSPALS
+              bmi     31$
+              lda     ##(NUMBONUSPALS - 1)
+31$:          clc
+              adc     ##STARTBONUSPALS
+              bra     6$
+4$:           lda     .near (PL+OFS_PL_POWERS+2*CONST_PW_IRONFEET)
+              cmp     ##(4 * 32 + 1)
+              bpl     5$
+              and     ##8
+              beq     51$
+5$:           lda     ##RADIATIONPAL
+              bra     6$
+51$:          lda     ##0
+6$:           jsr     .kbank tintHold
+              cmp     ##8
+              bne     7$
+              jsr     .kbank tintSoften
+              lda     ##8
+7$:           cmp     .near st_palette
+              beq     8$
+              sta     .near st_palette
+              jsl     long:I_SetPalette
+8$:           rtl
+
+;;; A = the palette just chosen. A red (2..8) is held at its strongest.
+;;; Anything else is shown as itself, except 0 while a hold is still up.
+tintHold:     sta     .near ST_T
+              cmp     ##2
+              bcc     4$
+              cmp     ##9
+              bcs     4$
+              lda     .near tintShow
+              beq     1$
+              cmp     .near ST_T
+              bcs     2$
+1$:           lda     .near ST_T
+              sta     .near tintShow
+              lda     ##TINT_FRAMES
+              sta     .near tintLeft
+              jsl     long:I_GetTime
+              clc
+              adc     ##TINT_REALTICS
+              sta     .near tintUntil
+              bra     3$
+2$:           lda     .near tintLeft
+              beq     20$
+              dec     .near tintLeft
+20$:          jsl     long:I_GetTime
+              sec
+              sbc     .near tintUntil
+              bmi     3$
+              lda     .near tintLeft
+              bne     3$
+              stz     .near tintShow
+              lda     .near ST_T
+              rts
+3$:           lda     .near tintShow
+              rts
+4$:           lda     .near ST_T
+              bne     5$
+              lda     .near tintShow
+              beq     6$
+              lda     .near tintLeft
+              beq     40$
+              dec     .near tintLeft
+40$:          jsl     long:I_GetTime
+              sec
+              sbc     .near tintUntil
+              bmi     3$
+              lda     .near tintLeft
+              bne     3$
+              stz     .near tintShow
+6$:           lda     ##0
+              rts
+5$:           stz     .near tintShow
+              stz     .near tintLeft
+              lda     .near ST_T
+              rts
+
+;;; Palette 8's 16 view colors are mostly the same red. Keep a quarter of
+;;; the ordinary color so the room stays visible. Once per level and gamma.
+tintSoften:   lda     .near _g_gamemap
+              cmp     .near tintMark
+              bne     1$
+              lda     .near _g_gamma
+              cmp     .near tintMarkG
+              beq     2$
+1$:           lda     .near _g_gamemap
+              sta     .near tintMark
+              lda     .near _g_gamma
+              sta     .near tintMarkG
+              lda     ##.word0 (TINTPAL+TINT8_OFF)
+              sta     dp:.tiny _Dp
+              lda     ##.word2 (TINTPAL+TINT8_OFF)
+              sta     dp:.tiny (_Dp+2)
+              ldy     ##0
+10$:          lda     [.tiny _Dp],y
+              sta     .near tintSave,y
+              iny
+              iny
+              cpy     ##32
+              bcc     10$
+2$:           lda     ##.word0 TINTPAL
+              sta     dp:.tiny _Dp
+              lda     ##.word2 TINTPAL
+              sta     dp:.tiny (_Dp+2)
+              ldy     ##0
+20$:          lda     [.tiny _Dp],y
+              sta     .near tintC0
+              lda     .near tintSave,y
+              phy
+              jsr     .kbank tintBlend
+              ply
+              sta     .near tintOut,y
+              iny
+              iny
+              cpy     ##32
+              bcc     20$
+              lda     ##.word0 (TINTPAL+TINT8_OFF)
+              sta     dp:.tiny _Dp
+              lda     ##.word2 (TINTPAL+TINT8_OFF)
+              sta     dp:.tiny (_Dp+2)
+              ldy     ##0
+30$:          lda     .near tintOut,y
+              sta     [.tiny _Dp],y
+              iny
+              iny
+              cpy     ##32
+              bcc     30$
+              rts
+
+;;; A = tint-8 color, tintC0 = ordinary color. Each nibble is
+;;; (ordinary + 3 * red) >> 2, which stays in 0..15. X is c0.
+tintBlend:    ldx     .near tintC0
+              sta     .near tintC8
+              txa
+              and     ##0x000f
+              sta     .near ST_PW
+              lda     .near tintC8
+              and     ##0x000f
+              sta     .near ST_T
+              asl     a
+              clc
+              adc     .near ST_T
+              clc
+              adc     .near ST_PW
+              lsr     a
+              lsr     a
+              and     ##0x000f
+              sta     .near ST_PW
+              txa
+              and     ##0x00f0
+              sta     .near ST_PX
+              lda     .near tintC8
+              and     ##0x00f0
+              sta     .near ST_T
+              asl     a
+              clc
+              adc     .near ST_T
+              clc
+              adc     .near ST_PX
+              lsr     a
+              lsr     a
+              and     ##0x00f0
+              ora     .near ST_PW
+              sta     .near ST_PW
+              txa
+              and     ##0x0f00
+              sta     .near ST_PX
+              lda     .near tintC8
+              and     ##0x0f00
+              sta     .near ST_T
+              asl     a
+              clc
+              adc     .near ST_T
+              clc
+              adc     .near ST_PX
+              lsr     a
+              lsr     a
+              and     ##0x0f00
+              ora     .near ST_PW
+              rts
