@@ -109,7 +109,7 @@ RL_SAVE:      .space  0x2c            ; the drawer inputs of the direct page
               .section coldcode, text
               .public R_InitLists, R_DrawLists, newPage
               .public recAlloc, recTex, recFuzz, recOvl, fillCol
-R_InitLists:  jsl     long:initColw         ; each column: its own page, offset
+R_InitLists:  jsl     long:initListState    ; fresh view installers, column pages
               jsl     long:R_ClearCovered   ; power-on DRAM is not zero
               .space  10                    ; keep the cold code addresses
               lda     ##XP_FIRST            ; no extra page used
@@ -6814,3 +6814,15 @@ R_ClearCovered:
               dex
               bpl     1$
 cvClearDone:  rtl
+
+;;; The loader reloads code on PR#7, but these fixed-address tags survive.
+;;; Matching a previous view would skip c5Mode/hvPatch and execute an
+;;; uninstalled overlay. No RAM pattern is a valid startup cache tag.
+initListState:
+              lda     ##0
+              sta     long:VW_HALF
+              sta     long:VW_THIRD
+              dec     a
+              sta     long:VW_CUR
+              sta     long:(WPAGE+W_SEGH)
+              jmp     long:initColw

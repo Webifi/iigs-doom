@@ -11,10 +11,10 @@
 ;;; src/iigs/r_frame65.s sets VW_HALF and VW_THIRD for each frame and paints
 ;;; the border around the window. Bank MM_BV (src/iigs/memmap.inc), words.
 #include "memmap.inc"
-VW_SIZE       .equ    (MM_BV + 0xb800) ; the size the player picked: VW_HALFSIZE
-                                      ;   for the half view, else 10 (full)
+VW_SIZE       .equ    (MM_BV + 0xb800) ; menu size code, not a pixel dimension;
+                                      ;   VW_HALFSIZE = half, 10 = full
 VW_CUR        .equ    (MM_BV + 0xb802) ; the size of this frame | VW_TAG
-VW_TAG        .equ    0xa500          ;   (the RAM at start never matches)
+VW_TAG        .equ    0xa500          ;   (invalidated by R_InitLists at startup)
 VW_LEFT       .equ    (MM_BV + 0xb804) ; the window of the size: its first
 VW_RIGHT      .equ    (MM_BV + 0xb806) ;   and last column, the row above it
 VW_TOP        .equ    (MM_BV + 0xb80a) ;   (-1: none) and the row after it
