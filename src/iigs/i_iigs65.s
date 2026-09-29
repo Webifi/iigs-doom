@@ -258,7 +258,7 @@ main:         sep     #0x20
               ora     #0x80
               sta     long:SPEED
               lda     #0x3f
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               jsl     long:bmAccelOff       ; (IIGS_ZipOff, the TWGS IRQ logic)
               jsl     long:I_InitSettings   ; from bank 0, before the game uses it
@@ -1010,7 +1010,7 @@ postKey:      sta     .near EVENT
               .extern endText
 quitToBasic:  sep     #0x30
               lda     #0x08                 ; the text pages shadowed again
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               lda     #0xd1                 ; yellow on red, as ENDOOM
               sta     long:TEXTCOL
               lda     long:BORDER
@@ -1073,3 +1073,24 @@ quitToBasic:  sep     #0x30
               sta     abs:ROM_CH
               sta     abs:ROM_OURCH
               jmp     abs:ROM_BASIC
+
+;;; SHADOW must also reach accelerators that decode bank-0 I/O writes.
+;;; In: native mode, 8-bit A = new SHADOW. All registers and P preserved.
+;;; IOLC hides $00:C035, so briefly expose I/O using the motherboard alias,
+;;; then write the final value through bank 0. IRQ cannot enter the ROM
+;;; vectors while IOLC is clear. This code, its stack, and direct page are
+;;; below $C000; DBR and D are irrelevant to these long stores. Restoring P
+;;; delivers any pending DOC/ADB IRQ only after the caller's mapping is back.
+;;; Fixed space in DiskCode keeps every existing code/data address in place.
+              .section shadowcode, text
+              .public IIGS_SetShadow
+IIGS_SetShadow:
+              php
+              sei
+              pha
+              and     #0xbf
+              sta     long:SHADOW
+              pla
+              sta     long:0x00c035
+              plp
+              rtl

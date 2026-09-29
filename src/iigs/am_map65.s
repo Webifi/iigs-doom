@@ -14,6 +14,8 @@
               .rtmodel version, "1"
               .rtmodel core, "*"
 
+              .extern IIGS_SetShadow
+
 #include "offsets.inc"
 #include "memmap.inc"
 #include "lists.inc"
@@ -1098,15 +1100,14 @@ done:         pla
               pla
               sta     dp:.tiny LPTR
               rtl
-;;; halfOvl: the overlay on the half view (the 3D view
-;;; stays in the window, the map covers the screen). Window pixels are
-;;; records that halfAll draws with their column (one paint scan); border
-;;; pixels go through the byte list, which erases exactly them next frame.
+;;; halfOvl: split the map overlay at the view-window boundary. Inside the
+;;; window, emit records for halfAll's column replay. Outside it, use the
+;;; byte list so the next frame erases only pixels touched by the overlay.
 halfOvl:      sep     #0x20                 ; shadowing off (the view turned
               lda     long:SHADOW           ;   it on): each border byte must
               pha                           ;   change on screen once, in
-              ora     #0x08                 ;   showBytesH (no flicker)
-              sta     long:SHADOW
+              ora     #0x08                 ;   showBytesH, after composition
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               lda     .near AM_MODE
               cmp     ##2
@@ -1120,7 +1121,7 @@ halfOvl:      sep     #0x20                 ; shadowing off (the view turned
               jsr     .kbank showBytesH
               sep     #0x20
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               brl     swap
 
@@ -1138,7 +1139,7 @@ AM_Clean:     php
               lda     long:SHADOW           ; SHR shadowing off
               pha
               ora     #0x08
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               jsr     .kbank eraseOldH
               lda     .near AM_ON
@@ -1169,7 +1170,7 @@ AM_Clean:     php
               jsl     long:I_MarkRect
               sep     #0x20
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
 9$:           stz     .near (iigs_textShown+2) ; (the title is gone)
               stz     .near AM_ON
