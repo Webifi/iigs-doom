@@ -254,6 +254,7 @@ keyDefaults:
               .public main
 main:         sep     #0x20
               lda     long:SPEED
+              and     #0xef                 ; video shadowing only in banks 00/01
               ora     #0x80
               sta     long:SPEED
               lda     #0x3f
