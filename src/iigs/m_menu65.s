@@ -33,7 +33,8 @@
               .extern G_DeferedPlayDemo, _g_timingdemo, vwFrame
               .extern I_Error, _Mul32, _UDivMod32, P_SetupLevel, IIGS_StopInterrupts
               .extern IIGS_StartInterrupts, G_SettingsChanged, I_MarkRect, I_ShowDirty
-              .extern IIGS_ZipOff, IIGS_ZipBack, _g_gamemap
+              .extern IIGS_ZipOff, IIGS_ZipBack, _g_gamemap, _g_gameaction
+              .extern LV_BDEMO, I_InitProgress
               .extern snd_SfxVolume, snd_MusicVolume
               .extern S_SetSfxVolume, S_SetMusicVolume
               .extern I_MenuPalette, I_MenuPaletteBack, message_on
@@ -1772,19 +1773,30 @@ txInsertN:    .asciz  "1"                   ; (bmDiskAsk writes the digit)
 
               .public bmLoad, bmSave, bmSaved, bmDiskOn, bmDiskOff
               .public bmSignOn, bmSignOff, bmDiskAsk, bmSignLoading, bmSignSaving
+GA_PLAYDEMO   .equ    5               ; gameaction of a demo (src/iigs/g_game65.s)
 ;;; A new life on the same map reloads it from memory in under a second, so
 ;;; it gets no sign (the sign costs about 40 ms; the user asked for one on
 ;;; steps of more than a couple of seconds). W_SET: the set in the level
 ;;; window (src/iigs/w_level65.s); after a title or intermission picture
-;;; the map loads again.
+;;; the map loads again. The boot demo's map is part of the load bar, so
+;;; it gets no sign (LV_BDEMO). A new game and later levels still do.
 bmLoad:       pha
               lda     .near _g_gamemap
               cmp     long:W_SET
               beq     1$
               sta     long:VW_LMAP
-              lda     ##.word0 txLoading
+              lda     .near _g_gameaction
+              cmp     ##GA_PLAYDEMO
+              bne     2$
+              lda     long:LV_BDEMO
+              beq     2$
+              lda     ##0                   ; STZ has no long address
+              sta     long:LV_BDEMO
+              jsl     long:I_InitProgress   ; a cell, if the bar is still up
+              bra     3$
+2$:           lda     ##.word0 txLoading
               jsl     long:bmSignOn
-              pla
+3$:           pla
               jsl     long:P_SetupLevel
               jmp     long:W_LevelDone      ; (the automap cache, bmSignOff)
 1$:           pla

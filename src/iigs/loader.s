@@ -33,7 +33,8 @@
 ;;;   7   number of disks
 ;;;   8   number of segments on this disk
 ;;;   10  entry point, 3 bytes
-;;;   14  blocks for each cell of the bar
+;;;   14  blocks per bar cell when the store stays on disk
+;;;   15  blocks per bar cell when the store loads (its banks are RAM)
 ;;;   16  segments, 8 bytes each: address (3), flags (1), first block (2),
 ;;;       count (2). Flag SEG_B1: the blocks are the B1 stream of the
 ;;;       segment (tools/b1.py: its length, then B1), read to STAGE and
@@ -107,7 +108,8 @@ HDR_DISK      .equ    HDR + 6
 HDR_DISKS     .equ    HDR + 7
 HDR_SEGS      .equ    HDR + 8
 HDR_ENTRY     .equ    HDR + 10
-HDR_STEP      .equ    HDR + 14
+HDR_STEP      .equ    HDR + 14          ; store stays on disk
+HDR_STEP2     .equ    HDR + 15          ; store loads
 HDR_SEG       .equ    HDR + 16
 HDR_STOREMAP  .equ    HDR + 368
 HDR_BUILD     .equ    HDR + 432
@@ -188,9 +190,9 @@ loaderStart:  sei
               plp
               bcc     2$
               jsr     abs:waitDisk          ; not disk 1: ask for it
-2$:           lda     abs:HDR_STEP
+2$:           jsr     abs:storeMode         ; then the step for that boot
+              jsr     abs:loadStep
               sta     dp:STEPLEFT
-              jsr     abs:storeMode
 
 ;;; The segments of the disk DISKNUM, its header in HDR.
 diskLoop:     lda     abs:HDR_SEGS
@@ -906,10 +908,19 @@ drawStrip:    ldx     ##STRIP
               jsr     abs:drawCount
               jmp     abs:drawBar
 
-;;; stepBar: after each block; one more full cell after HDR_STEP blocks.
-stepBar:      dec     dp:STEPLEFT
+;;; loadStep: A = the blocks per cell. HDR_STEP is the boot that leaves
+;;; the store on disk; HDR_STEP2 is the boot that loads it (STOREMODE).
+loadStep:     lda     dp:STOREMODE
               bne     1$
               lda     abs:HDR_STEP
+              rts
+1$:           lda     abs:HDR_STEP2
+              rts
+
+;;; stepBar: after each block; one more full cell after loadStep blocks.
+stepBar:      dec     dp:STEPLEFT
+              bne     1$
+              jsr     abs:loadStep
               sta     dp:STEPLEFT
               lda     #BAR_FULL
               sta     dp:CCOLOR

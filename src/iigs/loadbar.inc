@@ -1,8 +1,11 @@
 ;;; The load bar in the strip at the bottom of the title picture (rows
 ;;; 191-199, palette 15 with the colors STRIP_COLORS of tools/gscolor.py).
-;;; The loader (src/iigs/loader.s) fills LOAD_CELLS cells as the disks load
-;;; (tools/mkdisk.py has the same LOAD_CELLS); the game fills the others as
-;;; it makes its tables (I_InitProgress, src/iigs/i_viigs65.s).
+;;; The loader (src/iigs/loader.s) fills LOAD_CELLS cells as the disks load.
+;;; tools/mkdisk.py stores two steps for the blocks a boot reads: one when
+;;; the store stays on disk, one when it loads (its banks are RAM). Each
+;;; medium has its own pair (the floppies, the hard disk). The game fills
+;;; the other cells during init and the first load (I_InitProgress,
+;;; src/iigs/i_viigs65.s), before the title or the first demo is shown.
 BAR_ROW       .equ    193 * 160       ; rows 193-197
 BAR_X         .equ    44              ; the first cell at pixel 44; cells of
 BAR_CELLS     .equ    38              ;   5 x 5 pixels, 7 pixels apart
