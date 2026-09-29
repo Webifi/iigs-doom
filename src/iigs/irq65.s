@@ -17,6 +17,8 @@
               .rtmodel version, "1"
               .rtmodel core, "*"
 
+              .extern IIGS_SetShadow
+
               .extern IIGS_PollKeys, musPause, musResume, copyMusicIrq
 
 #include "music.inc"
@@ -448,7 +450,7 @@ IIGS_StartInterrupts:
               sep     #0x20
               lda     long:SHADOW
               ora     #IOLC
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               ;; ROM is now unmapped: install the execution image before
               ;; writing vectors. The five mutable music bytes stay put.
               jsl     long:copyMusicIrq
@@ -498,6 +500,6 @@ IIGS_StopInterrupts:
               sep     #0x20
               lda     long:SHADOW
               and     #0xff - IOLC
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
 9$:           plp
               rtl

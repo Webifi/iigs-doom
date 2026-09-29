@@ -9,6 +9,8 @@
               .rtmodel version, "1"
               .rtmodel core, "*"
 
+              .extern IIGS_SetShadow
+
 #include "offsets.inc"
 #include "memmap.inc"
 #include "dscols.inc"
@@ -118,7 +120,7 @@ R_RenderPlayerView:
               sep     #0x20                 ; SHR shadowing on (R_DrawLists of
               lda     long:SHADOW           ;   src/iigs/r_list65.s turns it off
               and     #0xf7                 ;   after the view)
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               PHASE   2
               jsr     .kbank setupFrame
@@ -2162,7 +2164,7 @@ VWTAB:        .word   0, 159, 0xffff, 168       ; the full view: 160 x 168
 vwBorder:     sep     #0x20
               lda     long:SHADOW
               and     #0xf7
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               lda     long:iigs_shrcmapA    ; the byte twice in a word
               and     ##0x00ff
