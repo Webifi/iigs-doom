@@ -82,6 +82,7 @@ DRB:          .space  200             ; the marked bytes of each row: the
 DRE:          .space  200             ;   first, and the last + 1 (0: none)
 GRAYMAP:      .space  256             ; a byte of the view in the grays of
                                       ;   the menu palette (I_SetLevelPalette)
+              .public TINTPAL
 TINTPAL:      .space  TINTS * TINT_ROW ; the level palettes in each tint
 
               .section znear, bss
@@ -381,7 +382,7 @@ newColors:    lda     .near newpal          ; a new tint
               lda     ##.word2 TINTPAL
               adc     ##0
               sta     dp:.tiny (_Dp+2)
-              lda     ##TINT_ROW
+              jsr     .kbank tintSpan       ; 32, or every palette at tint 0
               sta     dp:.tiny (_Dp+4)
               stz     dp:.tiny (_Dp+6)
               lda     ##(SHR_PALETTE & 0xffff)
@@ -2023,6 +2024,16 @@ vertexNumber: lda     .near VS_X
               lda     .near VS_NUMVTX
               sta     long:(VTXHASH+4),x
               inc     .near VS_NUMVTX
+              rts
+
+;;; Byte count of one tint change. Tint 0 fills every level palette, because
+;;; the screen may still be a picture. Any other tint writes the view's 16
+;;; colors only: the status bar, the menu and the message stay readable.
+tintSpan:     lda     .near curtint
+              bne     1$
+              lda     ##TINT_ROW
+              rts
+1$:           lda     ##32
               rts
 
 ;;; The paused screen stays in its original colors. Menus redraw a dark

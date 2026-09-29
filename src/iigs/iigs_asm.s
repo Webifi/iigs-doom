@@ -57,6 +57,20 @@ cDst:         .space  4
 cSrc:         .space  4
 cLen:         .space  4
 cN:           .space  2
+;;; Display-only damage tint. Not part of the player: the demos do not
+;;; read these. tintSave is the level's real tint-8 view row.
+              .public tintPeak, tintLeft, tintShow, tintUntil
+              .public tintMark, tintMarkG, tintSave, tintOut, tintC0, tintC8
+tintPeak:     .space  2
+tintLeft:     .space  2
+tintShow:     .space  2
+tintUntil:    .space  2
+tintMark:     .space  2
+tintMarkG:    .space  2
+tintSave:     .space  32
+tintOut:      .space  32
+tintC0:       .space  2
+tintC8:       .space  2
 
 ;;; ***************************************************************************
 ;;;
