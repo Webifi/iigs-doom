@@ -20,6 +20,15 @@ So, *can it play Doom?*  I guess that depends on how you define "play".  Maybe? 
 
 Seems so.  Thanks to bug reports from u/BenJets, u/chrisparana, and others in the Apple II community, it now loads and runs on real hardware at the predicted framerates.
 
+# What makes it faster
+
+The main things that let the engine get to ~4 FPS are:
+
+* Lower resolution. The view is 160 x 168 with double-wide pixels, so there's half as much to draw. In the IIgs's 320-pixel super hi-res mode each byte holds two pixels, so one byte write fills one double-wide pixel.
+* No floor or ceiling textures. Each floor and ceiling gets a single color picked from its texture and light level. Drawing it is a plain fill instead of a texture lookup for every pixel.
+* Precalculated tables. Doom's 256 colors and 32 light levels are mapped to each level's 16-color palettes when the game is built, so the engine looks colors up instead of calculating them. The 65816 has no multiply instruction, so multiplication uses a table of squares instead.
+* Collect first, then draw. While the frame is worked out, the walls, floors and sprites of each screen column go into a list for that column. When the frame is done, the columns are drawn from their lists, left to right. Each pixel pair written to screen memory takes about 1 µs (around 12 cycles at 12 MHz) to drain from the accelerator's write buffer, and the drawing code uses that wait to fetch the next texel and work out its color. We're able to use about 90% of those otherwise often stalled cycles, though when we're too slow you can see the frame getting painted.
+
 # Wanna try?
 
 Minimum requirements: A working IIgs, 4 MB RAM (8 MB recommended) and a 12 MHz ZipGS or TransWarp GS accelerator with at least 32 KB cache. You'll also need a 3.5" drive and 4 blank 800 KB floppies, or some other way to load the image(s).
