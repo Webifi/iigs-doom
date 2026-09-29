@@ -691,6 +691,10 @@ ssUpSolid:    lda     long:ssUp3,x
 ;;; initial value back by stride-1-offset, then multiply its step. Scale
 ;;; keeps 24 bits; edges keep STEP8E's fractional precision.
 ssSeg:        ldx     ##(W_SC-W_TF)
+              lda     dp:W_SEGTEX
+              bne     ssSegLoop
+              ldx     ##(W_PL-W_TF)
+              brl     ssLowEdge
 ssSegLoop:    lda     dp:(W_TF+4),x
               cpx     ##(W_SC-W_TF)
               beq     ssStepReady
@@ -706,17 +710,33 @@ ssStepReady:  sta     dp:W_T4
               clc
 ssBack:       adc     ##2
               tay
-              beq     3$
-2$:           lda     dp:W_TF,x
+              beq     ssScale
+              cpy     ##2
+              beq     ssBackTwo
+              bcc     ssBackOne
+;;; Three rewinds use one subtraction; only quarter view reaches here.
+              lda     dp:W_T4
+              clc
+              adc     dp:(W_TF+4),x
+              sta     dp:W_T4
+              lda     dp:(W_T4+2)
+              adc     dp:(W_TF+6),x
+              sta     dp:(W_T4+2)
+ssBackOne:    lda     dp:W_TF,x
               sec
               sbc     dp:W_T4
               sta     dp:W_TF,x
               lda     dp:(W_TF+2),x
               sbc     dp:(W_T4+2)
               sta     dp:(W_TF+2),x
-              dey
-              bne     2$
-3$:
+              bra     ssScale
+ssBackTwo:    lda     dp:W_TF,x
+              sec
+              sbc     dp:(W_TF+4),x
+              sta     dp:W_TF,x
+              lda     dp:(W_TF+2),x
+              sbc     dp:(W_TF+6),x
+              sta     dp:(W_TF+2),x
 ssScale:      bra     ssScale3
 ssScale4:     asl     dp:(W_TF+4),x
               rol     dp:(W_TF+6),x
@@ -732,8 +752,19 @@ ssScaled:     txa
               sec
               sbc     ##8
               tax
-              bpl     ssSegLoop
-              lda     .near SL_X0
+              bmi     ssReady
+              cpx     ##(W_PH-W_TF)
+              bcc     ssSegAgain
+              beq     ssHighEdge
+;;; Absent wall tiers do not consume their projected edge.
+ssLowEdge:    lda     dp:W_BOTTEX
+              bne     ssSegAgain
+              ldx     ##(W_PH-W_TF)
+ssHighEdge:   lda     dp:W_TOPTEX
+              bne     ssSegAgain
+              ldx     ##(W_BF-W_TF)
+ssSegAgain:   brl     ssSegLoop
+ssReady:      lda     .near SL_X0
               rts
 ss02Next4:    inx
               inx
