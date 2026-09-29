@@ -227,7 +227,7 @@
             (section farcode data_init_table cfar far coldcode detailimg))
     ;; The level loader (src/iigs/w_level65.s): cold, after the rest.
     (memory LvlCode (address (#x05dc00 . #x05ffff))
-            (section lvlcode (onecold #x05ec00)))
+            (section lvlcode (onecold #x05ec00) (tintcode #x05f100)))
     (block stack (size #x3500))
     (base-address _DirectPageStart DirectPage 0)
     (base-address _NearBaseAddress NearData 0)

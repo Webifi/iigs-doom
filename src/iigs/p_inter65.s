@@ -28,7 +28,7 @@ CLEARCLEAN    .macro  p
               .extern weaponinfo, automapmode, P_Random, P_RemoveMobj, S_StartSound
               .extern P_SetMobjState, P_SpawnMobj, P_DropWeapon, AM_Stop, I_Error
               .extern R_PointToAngle3, FixedMulAngle, finesine, finecosine
-              .extern IIGS_MulLo16, _Mul32, _Div32, _Div16
+              .extern IIGS_MulLo16, _Mul32, _Div32, _Div16, notePeak
 
 PL            .equ    _g_player
 BONUSADD      .equ    6
@@ -986,8 +986,7 @@ playerDamage: jsr     .kbank targetArg      ; the exit sector: at least 1 health
               cmp     ##101
               bmi     7$
               lda     ##100
-7$:           sta     .near (PL+OFS_PL_DAMAGECOUNT)
-              sec
+7$:           jsl     long:notePeak       ; same sta, plus the display peak
               rts
 
 ;;; ---------------------------------------------------------------------------
