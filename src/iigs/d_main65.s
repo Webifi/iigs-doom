@@ -13,7 +13,7 @@
 
               .extern _Dp, printf, FixedApproxDiv, IIGS_MulLo16
               .extern W_NextDemo
-              .extern I_GetTime, I_StartTic, I_InitKeyboard, IIGS_InitDocTimer, I_InitSound
+              .extern I_GetTime, I_TimeWait, I_StartTic, I_InitKeyboard, IIGS_InitDocTimer, I_InitSound
 #if TICSTEP > 1
               .extern I_StartTicUntil, P_WorldRuns
 #endif
@@ -286,7 +286,7 @@ tryRunTics:   jsl     long:I_GetTime
               beq     11$
               bpl     3$
 11$:
-              jsl     long:I_GetTime        ; (int16) (now - enter) > 10:
+              jsl     long:I_TimeWait       ; (int16) (now - enter) > 10:
               sec                           ;   M_Ticker only
               sbc     .near TR_ENTER
               sta     .near FP_NOW

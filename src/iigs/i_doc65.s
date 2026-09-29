@@ -126,6 +126,8 @@ IIGS_InitDocTimer:
               plp
               rtl
 
+
+
 ;;; ***************************************************************************
 ;;;
 ;;; int32_t I_GetTime(void) - time in 1/35 second tics.
@@ -345,3 +347,104 @@ IIGS_DocUpload:
               sta     long:SOUNDDATA
               plp
               rtl
+
+;;; Only tryRunTics' no-new-tic poll calls this watchdog. Normal clock reads
+;;; and rendering keep their old instructions and addresses. 65536 polls
+;;; without one clock step cannot be a normal 1/35-second wait, even at the
+;;; fastest supported clock (each poll also reads the slow DOC twice).
+;;; The words start at zero in the loaded image; a changed clock reloads
+;;; the full budget. Compare the low word: each read advances at most 255.
+              .section timerwait, text
+              .public I_TimeWait, IIGS_RepairDocTimer
+I_TimeWait:   jsl     long:I_GetTime
+              cmp     long:waitLast
+              beq     1$
+              sta     long:waitLast
+              pha
+              lda     ##0
+              sta     long:waitBudget
+              pla
+              rtl
+1$:           pha
+              lda     long:waitBudget
+              dec     a
+              sta     long:waitBudget
+              bne     2$
+              phx
+              jsl     long:IIGS_RepairDocTimer
+              plx
+2$:           pla
+              rtl
+waitLast:     .word   0
+waitBudget:   .word   0
+
+;;; A halted timer or a flat, nonzero ramp stalls game tics while music
+;;; can continue. Repair only oscillator 31 and the reserved ramp. Unlike
+;;; startup, do not halt voices or alarm 30, and do not reset elapsed tics.
+;;; The ramp contains no zero even during its rewrite, so alarm 30 can
+;;; keep scanning it. Main-thread entry, native A/X16, D/DB/Y unchanged.
+IIGS_RepairDocTimer:
+              php
+              sei
+              sep     #0x20
+              ldx     ##(0xa0 + TIMER_OSC)
+              lda     #1
+              jsr     .kbank waitSet
+1$:           lda     long:SOUNDCTL
+              bmi     1$
+              and     #0x0f
+              ora     #0x60
+              sta     long:SOUNDCTL
+              lda     #0
+              sta     long:SOUNDADRL
+              lda     #TIMER_PAGE
+              sta     long:SOUNDADRH
+              lda     #255
+              sta     long:SOUNDDATA
+              lda     #1
+2$:           sta     long:SOUNDDATA
+              inc     a
+              bne     2$
+              ldx     ##0xe1
+              lda     #(DOC_OSCS - 1) * 2
+              jsr     .kbank waitSet
+              ldx     ##TIMER_OSC
+              lda     #TIMER_FREQ
+              jsr     .kbank waitSet
+              ldx     ##(0x20 + TIMER_OSC)
+              lda     #0
+              jsr     .kbank waitSet
+              ldx     ##(0x40 + TIMER_OSC)
+              lda     #0
+              jsr     .kbank waitSet
+              ldx     ##(0x80 + TIMER_OSC)
+              lda     #TIMER_PAGE
+              jsr     .kbank waitSet
+              ldx     ##(0xc0 + TIMER_OSC)
+              lda     #7
+              jsr     .kbank waitSet
+              ldx     ##(0xa0 + TIMER_OSC)
+              lda     #0
+              jsr     .kbank waitSet
+              lda     #(0x60 + TIMER_OSC)
+              sta     long:SOUNDADRL
+              lda     long:SOUNDDATA
+              lda     long:SOUNDDATA
+              rep     #0x20
+              and     ##0xff
+              sta     long:tmLast
+              plp
+              rtl
+
+waitSet:      pha
+1$:           lda     long:SOUNDCTL
+              bmi     1$
+              and     #0x0f
+              sta     long:SOUNDCTL
+              lda     #0
+              sta     long:SOUNDADRH
+              txa
+              sta     long:SOUNDADRL
+              pla
+              sta     long:SOUNDDATA
+              rts
