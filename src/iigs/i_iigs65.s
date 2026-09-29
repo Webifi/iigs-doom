@@ -24,7 +24,7 @@
               .extern IIGS_InitSquares, IIGS_InitRecip, IIGS_InitFstep
               .extern R_InitSpriteScales, R_CheckSegPage
               .extern I_InitGraphicsHardwareSpecificCode, I_ShutdownGraphics, I_ShutdownSound
-              .extern I_InitProgress, I_InitSettings, I_GetTime, _g_menuactive
+              .extern I_InitSettings, I_GetTime, _g_menuactive
 
 NEWVIDEO      .equ    0xe0c029
 BORDER        .equ    0xe0c034
@@ -265,9 +265,7 @@ main:         sep     #0x20
               jsl     long:IIGS_InitSquares
               jsl     long:IIGS_InitRecip
               jsl     long:IIGS_InitFstep
-              jsl     long:I_InitProgress   ; a cell of the load bar
               jsl     long:R_InitSpriteScales
-              jsl     long:I_InitProgress   ; the next cell, loader picture still up
               jsl     long:R_CheckSegPage
               cmp     ##0
               beq     1$
