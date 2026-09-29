@@ -14,6 +14,8 @@
               .rtmodel version, "1"
               .rtmodel core, "*"
 
+              .extern IIGS_SetShadow
+
 #include "offsets.inc"
 #include "memmap.inc"
 #include "lists.inc"
@@ -1106,7 +1108,7 @@ halfOvl:      sep     #0x20                 ; shadowing off (the view turned
               lda     long:SHADOW           ;   it on): each border byte must
               pha                           ;   change on screen once, in
               ora     #0x08                 ;   showBytesH (user: no flicker)
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               lda     .near AM_MODE
               cmp     ##2
@@ -1120,7 +1122,7 @@ halfOvl:      sep     #0x20                 ; shadowing off (the view turned
               jsr     .kbank showBytesH
               sep     #0x20
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               brl     swap
 
@@ -1137,7 +1139,7 @@ AM_Clean:     php
               lda     long:SHADOW           ; SHR shadowing off
               pha
               ora     #0x08
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
               jsr     .kbank eraseOldH
               lda     .near AM_ON
@@ -1168,7 +1170,7 @@ AM_Clean:     php
               jsl     long:I_MarkRect
               sep     #0x20
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               rep     #0x20
 9$:           stz     .near (iigs_textShown+2) ; (the title is gone)
               stz     .near AM_ON

@@ -15,6 +15,8 @@
               .rtmodel version, "1"
               .rtmodel core, "*"
 
+              .extern IIGS_SetShadow
+
 #include "offsets.inc"
 #include "lists.inc"
 #include "wpage.inc"
@@ -552,7 +554,7 @@ R_DrawLists:  jsr     .kbank drawSel
               sep     #0x20
               lda     long:SHADOW
               ora     #0x08                 ; SHR shadowing off
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               plp
               rtl
 
@@ -577,7 +579,7 @@ pairBeginDone:
               lda     long:SHADOW
               pha
               and     #0xf7                 ; SHR shadowing on
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               lda     #.byte2 iigs_shrcmapA ; the bank of the colormaps (once
               sta     dp:.tiny (DC_CMA+2)   ;   a frame)
               sta     dp:.tiny (DC_CMB+2)
@@ -760,7 +762,7 @@ done:         cpx     dp:.tiny RL_E
 1$:           lda     #XP_FIRST             ; no extra page used
               sta     long:XPNEXT
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               plb
               rep     #0x20
               brl     pairEnd
@@ -1188,7 +1190,7 @@ spBeginDoneH:
               lda     long:SHADOW
               pha
               and     #0xf7                 ; SHR shadowing on
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               lda     #.byte2 iigs_shrcmapA ; the bank of the colormaps
               sta     dp:.tiny (DC_CMA+2)
               sta     dp:.tiny (DC_CMB+2)
@@ -1606,7 +1608,7 @@ hnext:        lda     dp:.tiny RL_HC        ; the next column
 1$:           lda     #XP_FIRST             ; no extra page used
               sta     long:XPNEXT
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               plb
               rep     #0x20
               brl     spEndH
@@ -1746,7 +1748,7 @@ spBeginDoneT:
               lda     long:SHADOW
               pha
               and     #0xf7                 ; SHR shadowing on
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               lda     #.byte2 iigs_shrcmapA ; the bank of the colormaps
               sta     dp:.tiny (DC_CMA+2)
               sta     dp:.tiny (DC_CMB+2)
@@ -2119,7 +2121,7 @@ tnext:        lda     dp:.tiny RL_HC        ; the next column
 1$:           lda     #XP_FIRST             ; no extra page used
               sta     long:XPNEXT
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               plb
               rep     #0x20
               brl     spEndT
@@ -2335,7 +2337,7 @@ spBeginDoneO:
               lda     long:SHADOW
               pha
               and     #0xf7                 ; SHR shadowing on
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               lda     #.byte2 iigs_shrcmapA ; the bank of the colormaps
               sta     dp:.tiny (DC_CMA+2)
               sta     dp:.tiny (DC_CMB+2)
@@ -2784,7 +2786,7 @@ onext:        lda     dp:.tiny RL_HC        ; the next column
 1$:           lda     #XP_FIRST             ; no extra page used
               sta     long:XPNEXT
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               plb
               rep     #0x20
               brl     spEndO
@@ -3340,7 +3342,7 @@ spBeginDoneQ:
               lda     long:SHADOW
               pha
               and     #0xf7                 ; SHR shadowing on
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               lda     #.byte2 iigs_shrcmapA ; the bank of the colormaps
               sta     dp:.tiny (DC_CMA+2)
               sta     dp:.tiny (DC_CMB+2)
@@ -3789,7 +3791,7 @@ qnext:        lda     dp:.tiny RL_HC        ; the next column
 1$:           lda     #XP_FIRST             ; no extra page used
               sta     long:XPNEXT
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               plb
               rep     #0x20
               brl     spEndQ
@@ -3911,7 +3913,7 @@ spBeginDoneU:
               lda     long:SHADOW
               pha
               and     #0xf7                 ; SHR shadowing on
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               lda     #.byte2 iigs_shrcmapA ; the bank of the colormaps
               sta     dp:.tiny (DC_CMA+2)
               sta     dp:.tiny (DC_CMB+2)
@@ -4286,7 +4288,7 @@ unext:        lda     dp:.tiny RL_HC        ; the next column
 1$:           lda     #XP_FIRST             ; no extra page used
               sta     long:XPNEXT
               pla
-              sta     long:SHADOW
+              jsl     long:IIGS_SetShadow
               plb
               rep     #0x20
               brl     spEndU
