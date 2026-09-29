@@ -109,8 +109,8 @@ RL_SAVE:      .space  0x2c            ; the drawer inputs of the direct page
               .public R_InitLists, R_DrawLists, newPage
               .public recAlloc, recTex, recFuzz, recOvl, fillCol
 R_InitLists:  jsl     long:initColw         ; each column: its own page, offset
-              .space  14                    ;   0 (the old loop's bytes: the cold
-                                            ;   code after it keeps its address)
+              jsl     long:R_ClearCovered   ; power-on DRAM is not zero
+              .space  10                    ; keep the cold code addresses
               lda     ##XP_FIRST            ; no extra page used
               sta     long:XPNEXT
               lda     ##.byte2 texBlocks    ; texBlocks in TEXBANK
@@ -6796,3 +6796,21 @@ flushReplay:  lda     dp:.tiny RS_SF
               .space 2
               .section replayshort, text, root
               .space 2
+
+;;; Covered-range metadata has no loader image. Replay reads it before its
+;;; first per-column clear; random DRAM can otherwise look like a live range.
+;;; Reset at renderer initialization and each level boundary, never per frame.
+;;; Native A/X = 16 bits, D/DB unchanged; A and X are scratch.
+              .section listinit, text
+              .public R_ClearCovered, R_LevelLists
+              .extern AM_LevelCache
+R_LevelLists: jsl     long:R_ClearCovered
+              jmp     long:AM_LevelCache
+R_ClearCovered:
+              lda     ##0
+              ldx     ##0x3fe               ; both complete 512-byte tables
+1$:           sta     long:CV_ROW,x         ; CV_ROW followed by CV_REC
+              dex
+              dex
+              bpl     1$
+cvClearDone:  rtl
