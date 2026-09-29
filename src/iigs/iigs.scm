@@ -37,7 +37,7 @@
     ;; firmware needs bank 0 code; the loader at $6000-$7FFF has finished
     ;; when the game runs. Its variables follow, up to $8FFF.
     (memory DiskCode (address (#x008000 . #x0089ff))
-            (section diskcode quitcode (shadowcode #x008180)))
+            (section diskcode quitcode (shadowcode #x008180) (timerwait #x008200)))
     ;; The game interrupt and the music player (src/iigs/irq65.s) in
     ;; slots $5D00-$5EFF (measured with music on). The disk
     ;; loads $DC00-$DEFF at $BA00-$BCFF (mkdisk.py). copyMusicIrq copies
