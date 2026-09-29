@@ -197,6 +197,7 @@ fuzzDir:      .byte   1, 0, 1, 0, 1, 1, 0
 IP_E1:        .space  2               ; the first and last byte of a row
 IP_E3:        .space  2
               .section near, data
+              .public initcell
 initcell:     .word   LOAD_CELLS      ; the next cell of the game
 
               .section farcode, text

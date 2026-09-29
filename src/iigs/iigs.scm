@@ -193,8 +193,13 @@
             (section (fourimg #x055000) farcode data_init_table cfar far))
     (memory HotMul (address (#x056000 . #x0566ff))
             (section (hotmul #x056000)))
-    (memory Code5f (address (#x056700 . #x0588ff))
+    (memory Code5f (address (#x056700 . #x05753d))
             (section (fourlist #x056700) farcode data_init_table cfar far))
+    ;; Load progress and the title wipe (src/iigs/w_level65.s). The loader's
+    ;; own run ends at onecold ($05EC00), so this sits in the free tail of
+    ;; the same bank: the decoder's jsr still reaches it.
+    (memory ProgCode (address (#x05753e . #x0588ff))
+            (section progcode))
     (memory Code5g (address (#x058900 . #x05927f))
             (section coldcode))
     ;; Sprite and masked-wall stride for the 1/4 and 1/3 views. Cold: once

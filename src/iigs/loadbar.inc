@@ -4,8 +4,8 @@
 ;;; tools/mkdisk.py stores two steps for the blocks a boot reads: one when
 ;;; the store stays on disk, one when it loads (its banks are RAM). Each
 ;;; medium has its own pair (the floppies, the hard disk). The game fills
-;;; the other cells during init and the first load (I_InitProgress,
-;;; src/iigs/i_viigs65.s), before the title or the first demo is shown.
+;;; the other cells during the first load (w_level65.s), a byte at a time,
+;;; before the title or the first demo is shown.
 BAR_ROW       .equ    193 * 160       ; rows 193-197
 BAR_X         .equ    44              ; the first cell at pixel 44; cells of
 BAR_CELLS     .equ    38              ;   5 x 5 pixels, 7 pixels apart

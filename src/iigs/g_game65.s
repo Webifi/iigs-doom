@@ -654,7 +654,7 @@ doLoadLevel:  lda     .near wipegamestate   ; from a level: a wipe
               sta     .near (PL+OFS_PL_PLAYERSTATE)
 2$:           jsl     long:P_SetSecnodeFirstpoolToNull
               lda     .near _g_gamemap
-              jsl     long:bmLoad           ; P_SetupLevel with "LOADING..."
+              jsl     long:bmLoad           ; P_SetupLevel with "LOADING"
               stz     .near _g_gameaction
               jsl     long:Z_CheckHeap
               ldx     ##(2 * NUMKEYS - 2)   ; all keys up

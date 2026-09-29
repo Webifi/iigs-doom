@@ -19,17 +19,20 @@
 ;;; the loader for tools/probe.lua) until a drive has it, with no key press.
 ;;; A wrong disk in that drive goes out again. A hard disk holds all the
 ;;; store on disk 1: no prompt. A map loads under the LOADING sign of bmLoad;
-;;; a picture set from the disks shows it here.
+;;; a picture set from the disks shows it here. The first load after boot
+;;; fills the rest of the loader bar. A later load from disk draws a red bar
+;;; in the bottom margin of the LOADING sign. Neither runs during play.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
 
 #include "memmap.inc"
+#include "loadbar.inc"
+#include "viewwin.inc"
 
               .extern _Dp, I_Error, fileinfo, numlumps, LC_MAP, PR_IOK, bootInfo
               .extern bmDiskOn, bmDiskOff, IIGS_CopyHuge, memset, W_GetNumForName
               .extern bmDiskAsk, bmSignLoading, bmSignSaving, bmSignOff
-              .extern I_InitProgress
               .extern WI_Start, F_StartFinale, AM_LevelCache, colmem
               .extern switchlist, animated_texture_basepic, R_MakeTextureColumns
               .public W_InitLevels, W_LoadSet, W_NeedDisk, W_ZeroBank, W_NEXTBANK
@@ -40,6 +43,8 @@
               .public lvRead, lvStatus, lvEject, lvDib
               .public titleWipe
               .extern I_ApplyColors, musGo, musLoad, snd_MusicVolume, Z_MallocStatic
+              .extern initcell, iigs_rowpageL, iigs_rowpageR, _UDivMod32
+              .public lvSignKind, lvSignPaint
 
 BOOTINFO      .equ    0x007e00        ; the loader (src/iigs/loader.s)
 BI_EXT        .equ    BOOTINFO + 16   ; the mode, the disks, the banks, the
@@ -145,6 +150,8 @@ W_InitLevels:
               dex
               dex
               bpl     0$
+              lda     ##0xffff              ; nothing is loading: the decoder's
+              sta     long:LV_PMARK         ;   compare misses
               ldx     ##(BI_EXT_SIZE - 2)
 1$:           lda     long:BI_EXT,x
               sta     long:LV_EXT,x
@@ -203,6 +210,7 @@ W_InitLevels:
               and     ##0x00ff              ; stored song chunks, once at boot.
               beq     9$
               jsr     .kbank storeHeader
+              jsr     .kbank lvBootArm     ; the bar covers this decode too
               lda     long:(LV_HDR+6)
               dec     a
               dec     a                    ; the set before common
@@ -334,18 +342,22 @@ W_LoadSet:    cmp     long:LV_SET
               lda     ##0xffff
               sta     long:LV_BLK
 2$:           jsr     .kbank storeHeader
+              lda     1,s
+              jsr     .kbank lvArm
               lda     long:LV_COMMON        ; the common units, once: the last
               bne     21$                   ;   set of the store
               lda     long:(LV_HDR+6)
               dec     a
               jsr     .kbank setRecord
+              jsr     .kbank pSave
               jsr     .kbank runSet
               jsr     .kbank again          ; (a changed disk: again)
-              bcs     2$
-              lda     ##1
+              bcc     20$
+              jsr     .kbank pRestore
+              bra     2$
+20$:          lda     ##1
               sta     long:LV_COMMON
               jsr     .kbank picBases
-              jsl     long:I_InitProgress   ; a cell while this load reads
 21$:          lda     1,s                   ; the record of the set: the
               dec     a                     ;   intermission set on the disk of
               cmp     ##(INTER_SET - 1)     ;   the map before (a copy on each
@@ -417,13 +429,17 @@ W_LoadSet:    cmp     long:LV_SET
               sta     long:LV_REC
 35$:          lda     long:LV_REC
               tax
+              jsr     .kbank pSave
               jsr     .kbank runSet
               jsr     .kbank again          ; (a changed disk: again)
-              bcs     35$
-              jsr     .kbank songFinish    ; before texture columns reuse it
+              bcc     36$
+              jsr     .kbank pRestore
+              bra     35$
+36$:          jsr     .kbank songFinish    ; before texture columns reuse it
               lda     ##0
               sta     long:LV_BOFS
-8$:           lda     long:(LV_EXT+EX_MODE)
+8$:           jsr     .kbank lvFinish
+              lda     long:(LV_EXT+EX_MODE)
               and     ##0x00ff
               bne     81$
               jsl     long:bmDiskOff
@@ -440,11 +456,9 @@ W_LoadSet:    cmp     long:LV_SET
               jsr     .kbank picBit
               ora     long:LV_PICOK
               sta     long:LV_PICOK
-              jsl     long:I_InitProgress   ; last cell of a boot picture
               rtl
 9$:           pla
               sta     long:LV_SET
-              jsl     long:I_InitProgress   ; last cell of this boot load
               rtl
 
 ;;; picBit: C = the bit of picture set C in LV_PICOK (1 the title, 2 the
@@ -1322,16 +1336,19 @@ b1Decode:     phb
               tax
               lda     long:LV_DST
               tay
+              jsr     .kbank pUnitStart
               jsr     .kbank b1Lits
               cpy     dp:B1_END             ; a sound stream ends at the end of
               bne     8$                    ;   the output and of the input
               cpx     dp:B1_SEND
               bne     8$
+              jsr     .kbank pTail
               pld
               plb
               clc
               rts
-8$:           pld
+8$:           jsr     .kbank pTail
+              pld
               plb
               sec
               rts
@@ -1339,7 +1356,11 @@ b1Decode:     phb
 b1Lits:       jsr     .kbank b1Gamma        ; a literal run
               dec     a
 b1Lmvn:       .byte   0x54, 0x00, 0x00      ; MVN: input -> output
-              cpy     dp:B1_END
+              txa                           ; one compare per copied run. $FFFF
+              cmp     long:LV_PMARK         ;   misses unless a bar is active
+              bcc     b1AfterLit
+              jsr     .kbank pFire
+b1AfterLit:   cpy     dp:B1_END
               bcs     b1Done
               asl     dp:B1_BITS            ; after literals: 0 = the last offset
               bne     1$
@@ -1369,7 +1390,11 @@ b1Copy:       dec     a                     ; a match
               lda     dp:B1_CNT
 b1Mmvn:       .byte   0x54, 0x00, 0x00      ; MVN: output -> output
               ldx     dp:B1_INP
-              cpy     dp:B1_END
+              txa
+              cmp     long:LV_PMARK
+              bcc     b1AfterMat
+              jsr     .kbank pFire
+b1AfterMat:   cpy     dp:B1_END
               bcs     b1Done
               asl     dp:B1_BITS            ; after a match: 0 = literals
               bne     2$
@@ -1404,6 +1429,540 @@ b1Rdw:        lda     long:0x000000,x
               sta     dp:B1_BITS
               pla
               rts
+
+;;; ---------------------------------------------------------------------------
+;;; The load indicator. Armed once per W_LoadSet, from the bytes of the units
+;;; about to be decoded (and the one song this load plays). A disk load
+;;; counts each of those bytes twice: once while fetch copies it, once while
+;;; the decoder emits it. The decoder compares X with LV_PMARK after each
+;;; copy and calls pFire only when a step is due. Direct page is the
+;;; decoder's during pFire, so none of this uses dp:. The boot bar's last
+;;; four cells are 60 steps (3 bytes x 5 rows x 4). The sign bar is one
+;;; pixel per step in the bottom margin of LOADING.
+;;; ---------------------------------------------------------------------------
+P_BOOTN       .equ    60              ; 4 cells x 15 sub-cells
+SIGN_ROW0     .equ    109             ; the bottom margin of the sign (rows
+SIGN_INK      .equ    191             ;   109-111): the bright menu red
+SIGN_PAD      .equ    4               ; black pixels kept inside the box
+P_SCREEN      .equ    0xe12000
+P_BACK        .equ    0x012000
+
+;;; Not in lvlcode: that run is full up to onecold at $05EC00. This bank
+;;; still reaches the decoder with jsr.
+              .section progcode, text
+
+;;; lvArm: the set number is in A (W_LoadSet's argument). Nothing if a load
+;;; is already armed. The boot bar wins while any of its cells are left,
+;;; including a timedemo's first map. Otherwise the sign, and only when its
+;;; text is LOADING. The set stays on the caller's stack.
+lvArm:        pha
+              lda     long:LV_PACT
+              beq     8$
+              brl     9$
+8$:           lda     long:initcell
+              cmp     ##BAR_CELLS
+              bcc     1$
+              lda     long:LV_PSHOW
+              bne     7$
+              brl     9$
+7$:           lda     long:VW_SGW
+              sec
+              sbc     ##(2 * SIGN_PAD)
+              bcs     5$
+              brl     9$
+5$:           bne     4$
+              brl     9$
+4$:           sta     long:LV_PMAX
+              lda     long:VW_SGW         ; the same left edge as the box
+              lsr     a
+              eor     ##0xffff
+              sec
+              adc     ##160
+              clc
+              adc     ##SIGN_PAD
+              sta     long:LV_PX
+              lda     ##2
+              bra     2$
+1$:           lda     ##P_BOOTN
+              sta     long:LV_PMAX
+              lda     ##1
+2$:           sta     long:LV_QD            ; the kind, stored after the sum
+              lda     ##0
+              sta     long:LV_PTOT
+              sta     long:(LV_PTOT+2)
+              jsr     .kbank sumStreams
+              jsr     .kbank armStep
+9$:           pla
+              rts
+
+;;; lvBootArm: 8 MB decodes every song into MUSBANK before the title load,
+;;; while the boot picture is still up. Arm the boot bar for that set, the
+;;; common units and the title, so the same steps run through all three.
+;;; W_LoadSet's lvArm then finds the bar already armed.
+lvBootArm:    lda     long:LV_PACT
+              bne     9$
+              lda     long:initcell
+              cmp     ##BAR_CELLS
+              bcs     9$
+              lda     ##P_BOOTN
+              sta     long:LV_PMAX
+              lda     ##1
+              sta     long:LV_QD
+              lda     ##0
+              sta     long:LV_PTOT
+              sta     long:(LV_PTOT+2)
+              lda     long:(LV_HDR+6)       ; the song set, then common
+              dec     a
+              dec     a
+              jsr     .kbank sumOne
+              lda     long:(LV_HDR+6)
+              dec     a
+              jsr     .kbank sumOne
+              lda     ##(TITLE_SET - 1)
+              jsr     .kbank sumOne
+              jmp     .kbank armStep
+9$:           rts
+
+;;; armStep: LV_PTOT bytes over LV_PMAX steps. LV_QD is the kind.
+armStep:      lda     long:LV_PTOT
+              sta     dp:.tiny _Dp
+              lda     long:(LV_PTOT+2)
+              sta     dp:.tiny (_Dp+2)
+              lda     long:LV_PMAX
+              sta     dp:.tiny (_Dp+4)
+              stz     dp:.tiny (_Dp+6)
+              jsl     long:_UDivMod32
+              cpx     ##0                   ; a step has to fit one word
+              beq     3$
+              lda     ##0xffff
+3$:           cmp     ##0
+              bne     6$
+              lda     ##1
+6$:           sta     long:LV_PSTEP
+              lda     ##0
+              sta     long:LV_PACC
+              sta     long:LV_PVIS
+              sta     long:LV_PXLAST
+              sta     long:LV_QA
+              sta     long:LV_QB
+              lda     ##0xffff
+              sta     long:LV_PMARK
+              lda     long:LV_QD
+              sta     long:LV_PACT
+              rts
+
+;;; sumStreams: LV_PTOT += the unit streams of the common set (when it is
+;;; not in yet) and of the set at 3,s. Song chunks count only for the song
+;;; this load will actually decode.
+sumStreams:   lda     long:LV_COMMON
+              bne     1$
+              lda     long:(LV_HDR+6)
+              dec     a
+              jsr     .kbank sumOne
+1$:           lda     3,s
+              dec     a
+              jsr     .kbank sumOne
+              lda     long:(LV_EXT+EX_MODE) ; the store is on disk: the same
+              and     ##0x00ff              ;   bytes are read, then decoded
+              bne     2$
+              lda     long:LV_PTOT
+              asl     a
+              sta     long:LV_PTOT
+              lda     long:(LV_PTOT+2)
+              rol     a
+              sta     long:(LV_PTOT+2)
+2$:           rts
+
+;;; sumOne: add the streams of set C (0-based). Clobbers LV_E, LV_N, LV_SRC
+;;; and LV_T; runSet loads them again. LV_QA is the song this set will play.
+sumOne:       jsr     .kbank setRecord
+              lda     long:(LV_HDR+8+4),x
+              sta     long:LV_N
+              lda     long:(LV_HDR+8),x
+              sta     long:LV_SRC
+              lda     long:(LV_HDR+8+2),x
+              sta     long:(LV_SRC+2)
+              jsr     .kbank entriesIn
+              lda     ##0
+              sta     long:LV_QA
+1$:           lda     long:LV_N
+              bne     8$
+              brl     9$
+8$:           lda     long:LV_E
+              sta     dp:.tiny _Dp
+              lda     long:(LV_E+2)
+              sta     dp:.tiny (_Dp+2)
+              lda     [.tiny _Dp]
+              cmp     ##UNIT
+              beq     4$
+              cmp     ##0xffe0
+              bcc     5$
+              cmp     ##0xfff0
+              bcs     2$
+              sec                           ; a song selector, as songEntry
+              sbc     ##0xffe0
+              tax
+              lda     long:songMus,x
+              and     ##0x00ff
+              cmp     long:LV_MUSWANT
+              bne     6$
+              lda     long:(LV_EXT+EX_MODE)
+              and     ##0x00ff
+              bne     6$
+              lda     .near snd_MusicVolume
+              beq     6$
+              lda     ##1
+              bra     7$
+6$:           lda     ##0
+7$:           sta     long:LV_QA
+              bra     5$
+2$:           cmp     ##0xfffc
+              beq     3$
+              cmp     ##0xfff6
+              bne     5$
+3$:           lda     long:LV_QA
+              beq     5$
+4$:           ldy     ##8                   ; the stream length (0 stays 0)
+              lda     [.tiny _Dp],y
+              clc
+              adc     long:LV_PTOT
+              sta     long:LV_PTOT
+              lda     ##0
+              adc     long:(LV_PTOT+2)
+              sta     long:(LV_PTOT+2)
+5$:           lda     long:LV_E
+              clc
+              adc     ##ENTRY
+              sta     long:LV_E
+              lda     long:(LV_E+2)
+              adc     ##0
+              sta     long:(LV_E+2)
+              lda     long:LV_N
+              dec     a
+              sta     long:LV_N
+              brl     1$
+9$:           rts
+
+;;; pSave / pRestore: a changed disk runs the set again. The steps already
+;;; drawn stay; the counters go back so the same pixels are drawn again.
+pSave:        lda     long:LV_PACC
+              sta     long:LV_PSAVEA
+              lda     long:LV_PVIS
+              sta     long:LV_PSAVEV
+              lda     long:LV_PXLAST
+              sta     long:LV_PSAVEX
+              rts
+pRestore:     lda     long:LV_PSAVEA
+              sta     long:LV_PACC
+              lda     long:LV_PSAVEV
+              sta     long:LV_PVIS
+              lda     long:LV_PSAVEX
+              sta     long:LV_PXLAST
+              lda     ##0
+              sta     long:LV_QA
+              sta     long:LV_QB
+              lda     ##0xffff
+              sta     long:LV_PMARK
+              rts
+
+;;; pUnitStart: X is this unit's first input byte. The previous unit's tail
+;;; already counted its own bytes, so X replaces PXLAST without adding.
+pUnitStart:   lda     long:LV_PACT
+              bne     1$
+              lda     ##0xffff
+              sta     long:LV_PMARK
+              rts
+1$:           txa
+              sta     long:LV_PXLAST
+              jmp     .kbank pMark
+
+;;; pMark: PMARK = PXLAST + (PSTEP - PACC), or $FFFF when that passes $FFFF.
+;;; PACC past PSTEP turns the indicator off.
+pMark:        lda     long:LV_PSTEP
+              sec
+              sbc     long:LV_PACC
+              bcc     7$
+              clc
+              adc     long:LV_PXLAST
+              bcc     6$
+              lda     ##0xffff
+6$:           sta     long:LV_PMARK
+              rts
+7$:           lda     ##0
+              sta     long:LV_PACT
+              lda     ##0xffff
+              sta     long:LV_PMARK
+              rts
+
+;;; pFire: count the bytes from PXLAST to X. Whole steps draw; the rest stays
+;;; in PACC. X and Y come back unchanged (Y is the decoder's output).
+pFire:        lda     long:LV_PACT
+              beq     9$
+              phx
+              phy
+              txa
+              sec
+              sbc     long:LV_PXLAST
+              bcc     8$
+              sta     long:LV_QC
+              txa
+              sta     long:LV_PXLAST
+              lda     long:LV_QC
+              jsr     .kbank pAdd
+              jsr     .kbank pMark
+8$:           ply
+              plx
+9$:           rts
+
+;;; pTail: the unit ended at X. The same account as a copy that crossed a step.
+pTail:        jmp     .kbank pFire
+
+;;; pAdd: A more bytes, from PACC. One drawn step per PSTEP bytes. QA/QB hold
+;;; the remainder while a step draws (the draw does not use them).
+pAdd:         clc
+              adc     long:LV_PACC
+              sta     long:LV_QA
+              lda     ##0
+              adc     ##0
+              sta     long:LV_QB
+1$:           lda     long:LV_QB
+              bne     2$
+              lda     long:LV_QA
+              cmp     long:LV_PSTEP
+              bcc     3$
+2$:           lda     long:LV_QA
+              sec
+              sbc     long:LV_PSTEP
+              sta     long:LV_QA
+              lda     long:LV_QB
+              sbc     ##0
+              sta     long:LV_QB
+              jsr     .kbank lvDrawOne
+              bra     1$
+3$:           lda     long:LV_QA
+              sta     long:LV_PACC
+              rts
+
+;;; lvDrawOne: the next step, unless the bar is already full. A sign step
+;;; draws only while the sign says LOADING; the count still advances.
+lvDrawOne:    lda     long:LV_PVIS
+              cmp     long:LV_PMAX
+              bcs     9$
+              lda     long:LV_PACT
+              cmp     ##1
+              bne     1$
+              lda     long:LV_PVIS
+              jsr     .kbank bootByte
+              bra     2$
+1$:           lda     long:LV_PSHOW
+              beq     2$
+              lda     long:LV_PX
+              clc
+              adc     long:LV_PVIS
+              sta     long:LV_QC
+              lda     ##SIGN_ROW0
+              sta     long:LV_QD
+              jsr     .kbank signRow
+              lda     long:LV_QD
+              inc     a
+              sta     long:LV_QD
+              jsr     .kbank signRow
+              lda     long:LV_QD
+              inc     a
+              sta     long:LV_QD
+              jsr     .kbank signRow
+2$:           lda     long:LV_PVIS
+              inc     a
+              sta     long:LV_PVIS
+9$:           rts
+
+;;; bootByte: sub-cell A of the boot bar (0..59) on the screen. Cell 34 +
+;;; A / 15, then that cell's byte (A mod 15) / 5 and row A mod 5. The edge
+;;; nibbles match I_InitProgress: the shared gap stays black.
+bootByte:     ldx     ##0
+1$:           cmp     ##15
+              bcc     2$
+              sec
+              sbc     ##15
+              inx
+              bra     1$
+2$:           pha
+              txa
+              sta     long:LV_QC
+              pla
+              ldx     ##0
+3$:           cmp     ##5
+              bcc     4$
+              sec
+              sbc     ##5
+              inx
+              bra     3$
+4$:           sta     long:LV_QD            ; the row
+              txa
+              sta     long:LV_QE            ; the byte
+              lda     long:LV_QC
+              clc
+              adc     ##LOAD_CELLS
+              sta     long:LV_QC
+              lda     ##BAR_FULL
+              pha
+              lda     long:LV_QC
+              lsr     a
+              bcs     5$
+              lda     long:LV_QE
+              cmp     ##2
+              bne     6$
+              lda     ##BAR_FULL & 0xf0
+              sta     1,s
+              bra     6$
+5$:           lda     long:LV_QE
+              bne     6$
+              lda     ##BAR_FULL & 0x0f
+              sta     1,s
+6$:           lda     long:LV_QC            ; the first byte of the cell
+              asl     a
+              asl     a
+              asl     a
+              sec
+              sbc     long:LV_QC
+              clc
+              adc     ##BAR_X
+              lsr     a
+              clc
+              adc     long:LV_QE
+              clc
+              adc     ##BAR_ROW
+              sta     long:LV_QC
+              lda     long:LV_QD
+              asl     a
+              asl     a
+              asl     a
+              asl     a
+              asl     a                     ; the row * 32
+              sta     long:LV_QD
+              asl     a
+              asl     a                     ; * 128
+              clc
+              adc     long:LV_QD
+              clc
+              adc     long:LV_QC
+              tax
+              pla
+              sep     #0x20
+              sta     long:P_SCREEN,x
+              rep     #0x20
+              rts
+
+;;; signRow: the pixel at LV_QC of row LV_QD, into the screen and the back
+;;; buffer, in the row's font color. LV_QA and LV_QB stay (pAdd).
+signRow:      lda     long:LV_QD
+              asl     a
+              asl     a
+              asl     a
+              asl     a
+              asl     a
+              sta     long:LV_QE
+              asl     a
+              asl     a
+              clc
+              adc     long:LV_QE
+              sta     long:LV_QE
+              lda     long:LV_QC
+              lsr     a
+              clc
+              adc     long:LV_QE
+              pha                           ; the byte of the row
+              lda     long:LV_QD
+              tax
+              lda     long:LV_QC
+              lsr     a
+              bcs     1$
+              sep     #0x20
+              lda     long:iigs_rowpageL,x
+              sta     long:LV_QE
+              lda     #0x0f
+              bra     2$
+1$:           sep     #0x20
+              lda     long:iigs_rowpageR,x
+              sta     long:LV_QE
+              lda     #0xf0
+2$:           sta     long:(LV_QE+1)
+              rep     #0x20
+              lda     long:LV_QE
+              and     ##0x00ff
+              xba
+              ora     ##SIGN_INK
+              tax
+              sep     #0x20
+              lda     long:MM_NIBTAB,x
+              sta     long:LV_QE
+              rep     #0x20
+              lda     1,s
+              tax
+              sep     #0x20
+              lda     long:P_SCREEN,x
+              and     long:(LV_QE+1)
+              ora     long:LV_QE
+              sta     long:P_SCREEN,x
+              sta     long:P_BACK,x
+              rep     #0x20
+              pla
+              rts
+
+;;; lvFinish: the boot bar is filled before W_LoadSet returns, so the title
+;;; or the demo starts on a full bar. A sign load has already drawn its
+;;; pixels. Either way the next load may arm again.
+lvFinish:     lda     long:LV_PACT
+              beq     9$
+              cmp     ##1
+              bne     2$
+1$:           lda     long:LV_PVIS
+              cmp     long:LV_PMAX
+              bcs     3$
+              jsr     .kbank lvDrawOne
+              bra     1$
+3$:           lda     ##BAR_CELLS
+              sta     long:initcell
+2$:           lda     ##0
+              sta     long:LV_PACT
+              lda     ##0xffff
+              sta     long:LV_PMARK
+9$:           rts
+
+;;; lvSignKind: A = 1 when bmSignOn's text is LOADING, else 0. lvSignPaint
+;;; redraws the pixels so far (an INSERT DISK wipes them and draws none).
+lvSignKind:   sta     long:LV_PSHOW
+              rtl
+lvSignPaint:  lda     long:LV_PACT
+              cmp     ##2
+              bne     9$
+              lda     long:LV_PSHOW
+              beq     9$
+              lda     ##0
+              pha
+1$:           lda     1,s
+              cmp     long:LV_PVIS
+              bcs     2$
+              clc
+              adc     long:LV_PX
+              sta     long:LV_QC
+              lda     ##SIGN_ROW0
+              sta     long:LV_QD
+              jsr     .kbank signRow
+              lda     long:LV_QD
+              inc     a
+              sta     long:LV_QD
+              jsr     .kbank signRow
+              lda     long:LV_QD
+              inc     a
+              sta     long:LV_QD
+              jsr     .kbank signRow
+              lda     1,s
+              inc     a
+              sta     1,s
+              bra     1$
+2$:           pla
+9$:           rtl
 
 ;;; ---------------------------------------------------------------------------
 ;;; titleWipe: from D_Wipe (I_FinishUpdate) of src/iigs/i_viigs65.s when a new
@@ -1455,6 +2014,10 @@ titleWipe:    lda     long:LV_BOOTT
               adc     ##3
               tcs
               rtl
+
+bitOf:        .byte   1, 2, 4, 8, 16, 32, 64, 128, 0
+
+              .section lvlcode, text
 
 ;;; ---------------------------------------------------------------------------
 ;;; void W_ZeroBank(int16_t bank)      In: C. The bank all zeros: a new bank
@@ -1542,7 +2105,19 @@ fetch:        lda     long:(LV_EXT+EX_MODE)
               tax
               lda     long:LV_DST
               jsl     long:IIGS_CopyHuge
-              lda     long:LV_SRC           ; on: src, dst += part, len -= part
+              lda     long:LV_PACT          ; count the block. Draw only when a
+              beq     22$                   ;   step is due, so the next read
+              lda     long:LV_PACC          ;   still catches the interleave
+              clc
+              adc     long:LV_PART
+              bcs     23$
+              cmp     long:LV_PSTEP
+              bcc     24$
+23$:          lda     long:LV_PART
+              jsr     .kbank pAdd
+              bra     22$
+24$:          sta     long:LV_PACC
+22$:          lda     long:LV_SRC           ; on: src, dst += part, len -= part
               clc
               adc     long:LV_PART
               sta     long:LV_SRC
@@ -1890,7 +2465,6 @@ frame:        sep     #0x20
 
               .section lvlcode, text
 diskMagic:    .ascii  "DOOMGS"
-bitOf:        .byte   1, 2, 4, 8, 16, 32, 64, 128
 
 unitsOk       .equ    0x008c8e
 bootUnits     .equ    0x008c90        ; the units of the boot drive
@@ -1926,7 +2500,28 @@ LV_SONGPTR    .equ    0x008cc8
 LV_SONGLEN    .equ    0x008ccc
 LV_CACHE      .equ    0x008cd0        ; eight compressed VICTOR chunk pointers
 LV_BDEMO      .equ    0x008cf0        ; 1 until the boot demo's map loads
-LV_END        .equ    0x008cf2        ; (the end of the variables)
+;;; The load indicator. Past the decoder's direct page ($8D00): a word each,
+;;; inside the zeroed range. PMARK is $FFFF when nothing is loading, so the
+;;; compare after each copy misses.
+LV_PACT       .equ    0x008e00        ; 0 none, 1 the boot bar, 2 the sign
+LV_PSTEP      .equ    0x008e02        ; decoded bytes per step (at least 1)
+LV_PMARK      .equ    0x008e04        ; the input index of the next step
+LV_PACC       .equ    0x008e06        ; bytes toward the current step
+LV_PXLAST     .equ    0x008e08        ; the input index already counted
+LV_PVIS       .equ    0x008e0a        ; steps drawn
+LV_PMAX       .equ    0x008e0c        ; steps in this load
+LV_PTOT       .equ    0x008e0e        ; the bytes of the load (32 bits)
+LV_PSAVEA     .equ    0x008e12        ; PACC, PVIS, PXLAST at runSet
+LV_PSAVEV     .equ    0x008e14
+LV_PSAVEX     .equ    0x008e16
+LV_PSHOW      .equ    0x008e18        ; 1: the sign says LOADING
+LV_QA         .equ    0x008e1a        ; pAdd, and the song match while summing
+LV_QB         .equ    0x008e1c
+LV_QC         .equ    0x008e1e
+LV_QD         .equ    0x008e20
+LV_PX         .equ    0x008e22        ; the sign bar's first pixel
+LV_QE         .equ    0x008e24
+LV_END        .equ    0x008e26        ; (the end of the variables)
 
 ;;; ---------------------------------------------------------------------------
 ;;; The firmware of the slot needs bank 0 code, D = 0, emulation mode and a
