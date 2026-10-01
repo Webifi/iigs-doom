@@ -1800,7 +1800,8 @@ bmLoad:       pha
               jsl     long:P_SetupLevel
               jmp     long:W_LevelDone      ; (the automap cache, bmSignOff)
 1$:           pla
-              jmp     long:P_SetupLevel
+              jsl     long:P_SetupLevel
+              jmp     long:bmSignOff        ; (the sign of bmStart, if on)
 bmSave:       lda     ##.word0 txSaving
               jsl     long:bmSignOn
               jsr     .kbank bmTwOwner      ; Disk I/O uses the entry config.
@@ -2218,7 +2219,11 @@ saveFailed:   jsl     long:G_SaveUndo
 ;;; Patch the four-byte LDA long at vwFrame to JSL bmTick so normal play
 ;;; has no frame-counter cost. bmTick repeats the displaced load; bmEnd
 ;;; restores it. The first instruction of vwFrame is part of this contract.
+;;; LOADING goes on first: bmClock holds the screen for about a second with
+;;; interrupts off, and a map already in memory sets up with no sign (bmLoad).
 bmStart:      jsl     long:I_MenuPaletteBack
+              lda     ##.word0 txLoading
+              jsl     long:bmSignOn
               stz     .near _g_menuactive
               stz     .near itemOn
               jsr     .kbank bmAccel
