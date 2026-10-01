@@ -17,7 +17,7 @@ MB_DMODE      .equ    0x0380          ;   (0 free run, 2 one-shot), the loop
 MB_LPTR       .equ    0x03c0          ;   of an attack table: page, size
 MB_LSIZ       .equ    0x0400
 MB_LEVEL      .equ    0x0440          ; 16: the level of each voice
-MB_CTLH       .equ    0x0450          ; 16: the control byte of a halted voice
+MB_CTLH       .equ    0x0450          ; 16: channel | 3 (M1 + halt resets phase)
 MB_CTLR       .equ    0x0460          ; 16: its channel (voice & 1)
 MB_VDESC      .equ    0x0470          ; 16: the descriptor of each voice
 MB_VCTL       .equ    0x0480          ; 16: its run control byte
