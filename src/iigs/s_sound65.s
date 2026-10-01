@@ -1509,7 +1509,7 @@ I_InitSound2: php
               asl     a
               asl     a
               sta     long:(MUSBUF+MB_CTLR),x
-              ora     #1
+              ora     #3                    ; M1 + halt: reset at the DOC scan
               sta     long:(MUSBUF+MB_CTLH),x
               dex
               bpl     2$
