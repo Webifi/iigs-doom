@@ -81,7 +81,7 @@ TITLE_SET     .equ    10              ; the title picture (the loader puts it
                                       ;   at the window start at boot)
 INTER_SET     .equ    11              ; the intermission and finale pictures
 RES_MIN       .equ    32              ; with this many window banks the picture
-                                      ;   sets stay (ROM 03 + 4 MB: 38, 8 MB)
+                                      ;   sets stay (ROM 03 + 4 MB: 40, 8 MB)
 NSETS_MAX     .equ    16
 SCRATCH       .equ    MM_RECBASE      ; the entries of a set from the disk: the
                                       ;   records are not in use at a load

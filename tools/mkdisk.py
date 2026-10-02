@@ -7,10 +7,10 @@ its files:
   block 1        the disk header (src/iigs/loader.s); ProDOS does not use it
   blocks 2-5     the volume directory
   block 6        the volume bitmap
-  DOOM.BOOT      the loader: index block 7, data blocks 8-19 (the boot
+  DOOM.BOOT      the loader: index block 7, data blocks 8-14 (the boot
                  block reads them)
   DOOM.DATAn     the data of the segments of the disk, in contiguous blocks
-                 from block 20 (the loader reads them by block number), then
+                 from block 15 (the loader reads them by block number), then
                  its index blocks
   DOOM.SETTINGS  on disk 1: one block with the settings and the saved
                  games of the game (src/iigs/m_config65.s). The loader loads
@@ -66,7 +66,7 @@ BITMAP_BLOCK = 6                # the bitmap: blocks 6-7 at most (8192 blocks)
 HD_FREE = 256                   # free blocks on the hard disk volume
 APM_PART = 64                   # --scsi: the first block of the partition
 LOADER_FIRST = 8                # STAGE2_BLOCK and STAGE2_COUNT of boot.s
-LOADER_BLOCKS = 6
+LOADER_BLOCKS = 7
 DATA_FIRST = LOADER_FIRST + LOADER_BLOCKS
 HDR_STOREMAP = 368              # header: for each run of the store (up to
 STOREMAP_MAX = 8                #   8): the first store block, the count,
