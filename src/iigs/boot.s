@@ -4,13 +4,13 @@
 ;;; mode with X = slot * 16. This code first checks that the computer is an
 ;;; Apple IIgs (with 6502 instructions only, so that an older Apple II can
 ;;; say so too). Then it loads the stage 2 loader (src/iigs/loader.s, the
-;;; file DOOM.BOOT of tools/mkdisk.py) from blocks 8-19 to $6000 through the
+;;; file DOOM.BOOT of tools/mkdisk.py) from blocks 8-14 to $6000 through the
 ;;; ProDOS block driver of the boot slot, and jumps to it with X = the unit
 ;;; number.
 
 STAGE2_ADDR   .equ    0x6000
 STAGE2_BLOCK  .equ    8
-STAGE2_COUNT  .equ    6
+STAGE2_COUNT  .equ    7
 
 PD_CMD        .equ    0x42
 PD_UNIT       .equ    0x43
