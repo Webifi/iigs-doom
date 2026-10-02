@@ -10,7 +10,8 @@
 ;;;   8    the sum of the bytes 12-511, 16 bits
 ;;;   12   gamma 0-4, always run, messages, the sound effect volume 0-15,
 ;;;        the music volume 0-15, the mouse, the mouse speed 0-9, the mouse
-;;;        moves, the detail (0 high, 1 low), the view size (VW_SIZE)
+;;;        moves, the detail (0 high, 1 low), the view size (VW_SIZE), the
+;;;        TWGS SLOW IRQ (VW_TWIRQ: 0 OFF, 1 CARD; 0 in older files)
 ;;;        (1 byte each)
 ;;;   32   the Doom key of each ADB key code 0-127 (NOKEY: none)
 ;;;   160  the saved games (F_SLOTS, src/iigs/g_game65.s)
@@ -56,6 +57,7 @@ F_MOUSE       .equ    17
 F_MSPEED      .equ    18
 F_MMOVE       .equ    19
 F_DETAIL      .equ    20
+F_TWIRQ       .equ    22              ; (21 is VW_FVSIZE)
 F_KEYS        .equ    32
 VERSION       .equ    1
 NOKEY         .equ    0xff            ; keyTable: no Doom key
@@ -90,7 +92,8 @@ diskMagic:    .ascii  "DOOMGS"          ; the disk header
 
 ;;; ---------------------------------------------------------------------------
 ;;; void I_InitSettings(void): the file and BOOTINFO from the loader, before
-;;; the game uses bank 0 there.
+;;; the game uses bank 0 there. It also sets VW_TWIRQ from the file (OFF if the
+;;; file is not valid): bmAccelOff needs it, and it runs before G_LoadSettings.
 ;;; ---------------------------------------------------------------------------
               .section coldcode, text
               .public I_InitSettings
@@ -107,6 +110,12 @@ I_InitSettings:
               dex
               dex
               bpl     2$
+              jsr     .kbank checkFile
+              lda     ##0
+              bcs     3$
+              lda     long:(settingsFile+F_TWIRQ)
+              jsr     .kbank flag
+3$:           sta     long:VW_TWIRQ
               rtl
 
 ;;; ---------------------------------------------------------------------------
@@ -272,6 +281,8 @@ collect:      ldx     ##F_VERSION - 1
               sta     long:(settingsFile+F_DETAIL)
               lda     long:VW_SIZE          ; (the view menu writes it too)
               sta     long:(settingsFile+VW_FVSIZE)
+              lda     long:VW_TWIRQ
+              sta     long:(settingsFile+F_TWIRQ)
               rep     #0x20
               ldx     ##0                   ; the Doom key of each ADB key
 2$:           phx
@@ -342,7 +353,7 @@ G_SaveUndo:   ldx     ##FILE_SIZE - 2
               rtl
 
 ;;; Keep coldcode offsets after moving writeFile to vwcode.
-              .space  126
+              .space  99
 
 ;;; ---------------------------------------------------------------------------
 ;;; Slot firmware needs bank 0 code, D = 0, emulation mode and page-1 S.

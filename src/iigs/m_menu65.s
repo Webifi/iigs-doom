@@ -542,7 +542,6 @@ itemRoutine:
               .word   .word0 inputMenu
               .word   .word0 vwItem
               .word   .word0 vwItem
-              .word   .word0 soundMenu
               .word   .word0 bindAction
               .word   .word0 bindAction
               .word   .word0 bindAction
@@ -566,6 +565,7 @@ itemRoutine:
               .word   .word0 changeGamma
               .word   .word0 sfxVolume
               .word   .word0 musicVolume
+              .word   .word0 changeTwIrq
               .word   .word0 changeAlwaysRun
               .word   .word0 changeMouse
               .word   .word0 changeMouseSpeed
@@ -1214,7 +1214,7 @@ drawNewGame:  lda     ##96                  ; M_NEWG, M_SKILL
 drawOptions:  rts
 videoMenu:    lda     ##MENU_VIDEO
               brl     setupMenu
-soundMenu:    lda     ##MENU_VIDEO
+soundMenu:    lda     ##MENU_VIDEO          ; (no item has it now; the code stays)
               brl     setupMenu
 inputMenu:    lda     ##MENU_INPUT
               brl     setupMenu
@@ -2153,7 +2153,7 @@ bmAccelOff:   jsl     long:IIGS_ZipOff
               sta     long:VW_TWOWN
               lda     ##VW_TWTAG
               sta     long:VW_TWON
-              jsl     long:TW_IRQOFF
+              jsl     long:bmTwStart
               pld
               plb
               plp
@@ -2165,7 +2165,7 @@ bmAccelBack:  jsr     .kbank bmTwOwner
               jmp     long:IIGS_ZipBack
 
 ;;; bmTwOwner: the owner's configuration of the entry (SetTWConfig);
-;;; bmTwFast: the IRQ logic off again.
+;;; bmTwFast: the configuration for play again (bmTwPlay).
 bmTwOwner:    lda     long:VW_TWON
               cmp     ##VW_TWTAG
               bne     9$
@@ -2190,7 +2190,7 @@ bmTwFast:     lda     long:VW_TWON
               phd
               lda     ##0x0a00
               tcd
-              jsl     long:TW_IRQOFF
+              jsl     long:bmTwPlay
               pld
               plb
               plp
@@ -2691,6 +2691,33 @@ bmFontShade:  sta     dp:.tiny (_Dp+6)
               bcc     2$
               rts
 
+;;; TWGS SLOW IRQ is the last row of DISPLAY & SOUND. Only a TransWarp GS shows it.
+;;; OFF: the game turns the IRQ slowdown of the card off for play, as before.
+;;; CARD: play keeps the AppleTalk/IRQ setting that the owner made in the card's
+;;; control panel. The card then runs slow while interrupts are masked.
+;;; bmTwStart is the first call of bmAccelOff and runs with a TransWarp GS only:
+;;; the page gets its fifth row. A build with no MUSIC VOLUME row has no place
+;;; for it. bmTwPlay puts the card in its play state. The caller prepares the
+;;; firmware call as bmAccelOff does; the RTL of the firmware routine returns to it.
+bmTwStart:
+#if MUSIC_MENU
+              lda     ##5
+              sta     long:(menuNum + MENU_VIDEO)
+#endif
+bmTwPlay:     lda     long:VW_TWIRQ
+              bne     1$
+              jmp     long:TW_IRQOFF
+1$:           lda     long:VW_TWOWN
+              jmp     long:TW_SETCFG
+
+;;; changeTwIrq: the routine of the row. It flips the value and puts the card
+;;; in the new state at once.
+changeTwIrq:  lda     ##1
+              sec
+              sbc     long:VW_TWIRQ
+              sta     long:VW_TWIRQ
+              jmp     .kbank bmTwFast
+
               .space  (0x9a1 - (. - vwKeys))
                                       ; Keep vwFrame and other vwcode in place.
               .section uicode, text
@@ -2972,8 +2999,14 @@ uiSettings:   pei     dp:.tiny (_Dp+8)
               bra     6$
 4$:           cpx     ##20
               beq     3$
-              bra     5$
-              .space  30              ; Keep later uicode entries fixed.
+              cpx     ##44                  ; TWGS SLOW IRQ: OFF or CARD
+              bne     5$
+              ldx     ##.word0 uiOff
+              cmp     ##0
+              beq     2$
+              ldx     ##.word0 uiCard
+              bra     2$
+              .space  14              ; Keep later uicode entries fixed.
 5$:           lda     long:UI_VALUE
               cpx     ##36
               bcs     51$
@@ -3024,6 +3057,7 @@ uiSettings:   pei     dp:.tiny (_Dp+8)
               jmp     long:M_DrawSkull
 uiOff:        .asciz  "OFF"
 uiOn:         .asciz  "ON"
+uiCard:       .asciz  "CARD"
 
 uiGammaPos:   .byte   0, 4, 8, 11, 15
 uiMousePos:   .byte   0, 2, 3, 5, 7, 8, 10, 12, 13, 15
@@ -3091,15 +3125,17 @@ uiLCache:     .asciz  "CACHE"
 uiLRom:       .asciz  "ROM"
 
 ;;; Menu counts, item offsets, layout and parent selections.
-;;; Retain the old SOUND slots so later item indices stay fixed.
+;;; Retain the old SOUND slots so later item indices stay fixed (the SOUND item
+;;; of OPTIONS went: TWGS SLOW IRQ takes its place in the item tables).
 menuNum:      .word   6, 5, 8, 5, 11, 8
-; VIEW, GAMMA and SFX share a page; music adds its row when enabled.
+; VIEW, GAMMA and SFX share a page; music adds its row when enabled. With a
+; TransWarp GS the page has TWGS SLOW IRQ as its last row (bmTwStart).
 #if MUSIC_MENU
               .word   4, 2, 5
 #else
               .word   3, 1, 5
 #endif
-menuItems:    .word   0, 12, 22, 38, 50, 72, 88, 92, 96
+menuItems:    .word   0, 12, 22, 38, 48, 70, 86, 90, 96
 menuX:        .word   97, 48, 112, 60, 48, 112, 60, 60, 60
 menuY:        .word   64, 63, 25, 48, 24, 25, 56, 48, 48
 menuLine:     .word   16, 16, 13, 18, 16, 13, 24, 28, 20
@@ -3108,7 +3144,7 @@ menuPrev:     .word   0xffff, MENU_MAIN, MENU_MAIN, MENU_MAIN, MENU_INPUT
 menuPrevItem: .word   0, 0, 2, 1, 4, 3, 1, 1, 2
 itemStatus:   .word   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
               .word   2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
-              .word   1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 1
+              .word   1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1
 itemLump:     .word   L_NGAME, L_OPTION, L_LOADG, L_SAVEG, L_QUITG, L_QUITG
               .word   L_JKILL, L_JKILL+2, L_JKILL+4, L_JKILL+6, L_JKILL+8
               .word   0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
@@ -3121,18 +3157,18 @@ uiTitles:     .word   0, 0, 0, .word0 uiOptions, 0, 0, .word0 uiVideo
               .word   .word0 uiSound, .word0 uiInput
 uiLabels:     .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   .word0 uiMessages, .word0 uiVideo, .word0 uiInput
-              .word   .word0 txBench, .word0 txSaveSet, .word0 uiSound, 0, 0
+              .word   .word0 txBench, .word0 txSaveSet, 0, 0
               .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   .word0 uiLView, .word0 uiGamma, .word0 uiSfx
-              .word   .word0 uiMusic, .word0 uiRun, .word0 uiMouse
+              .word   .word0 uiMusic, .word0 uiTwirq, .word0 uiRun, .word0 uiMouse
               .word   .word0 uiSpeed, .word0 uiMove, .word0 uiKeys
 uiKinds:      .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-              .word   0, 0, 0, 0, 0, 0, 20, 28, 36, 40, 8, 12, 32, 16, 0
+              .word   0, 0, 0, 0, 0, 20, 28, 36, 40, 44, 8, 12, 32, 16, 0
 uiValues:     .long   0, showMessages, _g_alwaysRun, iigs_mouseon
-; Unused item 24 keeps the reserved detailimg fragment linked.
+; Unused kind 24 keeps the reserved detailimg fragment linked.
               .long   iigs_mousemove, VW_SIZE, menuDetailPad, _g_gamma
-              .long   iigs_mousespeed, snd_SfxVolume, snd_MusicVolume
+              .long   iigs_mousespeed, snd_SfxVolume, snd_MusicVolume, VW_TWIRQ
 uiOptions:    .asciz  "OPTIONS"
 uiMessages:   .asciz  "MESSAGES"
 uiVideo:      .asciz  "DISPLAY & SOUND"
@@ -3147,6 +3183,7 @@ uiMouse:      .asciz  "MOUSE"
 uiSpeed:      .asciz  "MOUSE SPEED"
 uiMove:       .asciz  "MOUSE MOVE"
 uiKeys:       .asciz  "KEY SETUP"
+uiTwirq:      .asciz  "TWGS SLOW IRQ"
 
               .extern oneNormalize, oneRemember, oneDetail, oneLoadSettings
 

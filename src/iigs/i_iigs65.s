@@ -260,8 +260,9 @@ main:         sep     #0x20
               lda     #0x3f
               jsl     long:IIGS_SetShadow
               rep     #0x20
-              jsl     long:bmAccelOff       ; (IIGS_ZipOff, the TWGS IRQ logic)
               jsl     long:I_InitSettings   ; from bank 0, before the game uses it
+              jsl     long:bmAccelOff       ; (IIGS_ZipOff, the TWGS IRQ logic: it
+                                            ;   needs VW_TWIRQ from the line above)
               jsl     long:IIGS_InitSquares
               jsl     long:IIGS_InitRecip
               jsl     long:IIGS_InitFstep
