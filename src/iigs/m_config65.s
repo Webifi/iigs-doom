@@ -250,7 +250,9 @@ fileSum:      lda     ##0
               rts
 
 ;;; collect: settingsFile gets the magic, the version, the settings of now
-;;; and the sum (the saved games are there already).
+;;; and the sum (the saved games are there already). The view size is
+;;; vwStored: 0 until the player picks one (src/iigs/m_speed65.s).
+              .extern vwStored
 collect:      ldx     ##F_VERSION - 1
 1$:           lda     long:magic,x
               sep     #0x20
@@ -279,7 +281,7 @@ collect:      ldx     ##F_VERSION - 1
               sta     long:(settingsFile+F_MMOVE)
               lda     .near detailLevel
               sta     long:(settingsFile+F_DETAIL)
-              lda     long:VW_SIZE          ; (the view menu writes it too)
+              lda     long:vwStored         ; 0 until the player picks a size
               sta     long:(settingsFile+VW_FVSIZE)
               lda     long:VW_TWIRQ
               sta     long:(settingsFile+F_TWIRQ)
@@ -493,19 +495,16 @@ writeFile:    lda     long:(bootInfo+BI_MAGIC)
               rtl
               .space  PAD_WF                ; (vwcode keeps its layout)
 
-;;; Set the view from the validated file before G_LoadSettings's collect
-;;; writes VW_SIZE back to it. Otherwise startup replaces even old 5/7
-;;; settings with uninitialized VW_SIZE, and the menu normalizes to full.
+;;; Take the view size of the validated file (vwStored for collect, VW_SIZE
+;;; for the renderer) before G_LoadSettings. A size that is not one of the six
+;;; counts as none: the speed test picks one (src/iigs/m_speed65.s).
 ;;; Cold wrapper only: all old configuration and renderer bytes stay put.
               .section onecold, text
               .public oneLoadSettings
-              .extern oneNormalize
+              .extern speedStored
 oneLoadSettings:
               jsr     .kbank checkFile
-              lda     ##10
-              bcs     1$
-              lda     long:(settingsFile+VW_FVSIZE)
-              and     ##0x00ff
-              jsl     long:oneNormalize
-1$:           sta     long:VW_SIZE
+              jsl     long:speedStored      ; vwStored; A = the size, or 10
+              sta     long:VW_SIZE
               jmp     long:G_LoadSettings
+              .space  12                    ; (onecold keeps its layout)

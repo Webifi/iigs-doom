@@ -230,9 +230,11 @@
             (section coldcode))
     (memory Code5i (address (#x05c000 . #x05dbff))
             (section farcode data_init_table cfar far coldcode detailimg))
-    ;; The level loader (src/iigs/w_level65.s): cold, after the rest.
+    ;; The level loader (src/iigs/w_level65.s): cold, after the rest. The
+    ;; speed test of the first view size (src/iigs/m_speed65.s) runs once at
+    ;; boot and never in a frame.
     (memory LvlCode (address (#x05dc00 . #x05ffff))
-            (section lvlcode (onecold #x05ec00) (tintcode #x05f100)))
+            (section lvlcode (onecold #x05ec00) (tintcode #x05f100) (speedcode #x05f400)))
     (block stack (size #x3500))
     (base-address _DirectPageStart DirectPage 0)
     (base-address _NearBaseAddress NearData 0)

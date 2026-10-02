@@ -2738,14 +2738,12 @@ uiReload:     rtl                           ; Apply gamma after the restore.
 ;;; high-detail drawers; normalize both saved copies without a dirty mark.
 UI_FDETAIL    .equ    20              ; F_DETAIL of m_config65.s.
               .public uiLoadSettings
-              .extern G_LoadSettings, G_RememberSettings
+              .extern G_LoadSettings, G_RememberSettings, speedSize, vwStored
 uiLoadSettings:
               jsl     long:oneLoadSettings
-              lda     long:(settingsFile+VW_FVSIZE)
-              and     ##0x00ff
-              jsl     long:oneNormalize
-              bra     1$
-              .space  7                     ; preserve every following address
+              jsl     long:speedSize        ; The size of the file, else of the
+              bra     1$                    ; speed test (src/iigs/m_speed65.s).
+              .space  14                    ; preserve every following address
 1$:           pha                           ; Every size draws at high detail:
               stz     .near detailLevel     ; FULL FAST (low detail) went, it
                                             ; saved only 6% (1% on fight frames).
@@ -2757,10 +2755,9 @@ uiLoadSettings:
               rep     #0x20
               pla
               sta     long:VW_SIZE
-              sep     #0x20
-              sta     long:(settingsFile+VW_FVSIZE)
-              rep     #0x20
-              lda     ##VW_INITTAG
+              bra     2$                    ; The file keeps its byte: 0 is none.
+              .space  6
+2$:           lda     ##VW_INITTAG
               sta     long:VW_INIT
               jsl     long:G_SettingsChanged ; Collect the normalized checksum.
               jmp     long:oneRemember
@@ -2847,7 +2844,7 @@ uiViewCycle:  jsr     .kbank uiViewIndex
 uiViewApply:  lda     long:uiSizes,x
               sta     long:VW_SIZE
               sep     #0x20
-              sta     long:(settingsFile+VW_FVSIZE)
+              sta     long:vwStored         ; A pick: the file gets it at collect.
               rep     #0x20
               lda     long:(uiSizes+2),x
               sta     .near detailLevel
