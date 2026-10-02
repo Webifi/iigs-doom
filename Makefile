@@ -33,7 +33,7 @@ IIGS_S   := src/iigs/crt0.s src/iigs/iigs_asm.s src/iigs/irq65.s src/iigs/m_fixe
             src/iigs/tables65.s src/iigs/info65.s src/iigs/r_state65.s \
             src/iigs/p_tick65.s src/iigs/p_map65.s src/iigs/string65.s src/iigs/r_wall65.s src/iigs/r_bsp65.s src/iigs/r_thing65.s src/iigs/p_trace65.s src/iigs/r_list65.s \
             src/iigs/i_doc65.s src/iigs/i_snd65.s src/iigs/m_config65.s \
-            src/iigs/cal_integer.s src/iigs/w_level65.s
+            src/iigs/cal_integer.s src/iigs/w_level65.s src/iigs/m_speed65.s
 
 OBJS     := $(patsubst src/iigs/%.s,$(OBJ)/%.o,$(IIGS_S)) $(OBJ)/drawcol.o $(OBJ)/endtext.o
 
