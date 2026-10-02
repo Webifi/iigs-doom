@@ -1,11 +1,12 @@
-;;; Stage 2 loader, the file DOOM.BOOT in disk blocks 8-19 (tools/mkdisk.py),
+;;; Stage 2 loader, the file DOOM.BOOT in disk blocks 8-14 (tools/mkdisk.py),
 ;;; runs at $6000 in bank 0.
 ;;;
 ;;; Entered from the boot block (src/iigs/boot.s) in emulation mode with
 ;;; X = the ProDOS unit number of the boot drive. The loader:
 ;;; 1. finds the RAM banks: $02-$0D and $10-$3F must be RAM (4 MB, the
 ;;;    fixed data of src/iigs/memmap.inc); if not, a text screen says why the
-;;;    game cannot run. $0E-$0F and $40-$7F may be there;
+;;;    game cannot run, with the RAM found and the RAM that the firmware
+;;;    counts. $0E-$0F and $40-$7F may be there;
 ;;; 2. turns on the super hi-res screen, black;
 ;;; 3. loads each disk: the header in block 1, then the segments block by
 ;;;    block into bank 0 and with MVN to their 24-bit address. The title
@@ -102,6 +103,9 @@ B1_OFF        .equ    0x86            ;   input index, the count, the end
 B1_INP        .equ    0x88
 B1_CNT        .equ    0x8a
 B1_END        .equ    0x8c
+FWEND         .equ    0x8e            ; cannotRun: fwBanks
+NUM           .equ    0x90            ; putKB: the number left, the digit
+DIGIT         .equ    0x92            ;   (2 bytes each)
 
 HDR           .equ    0x7800          ; block 1 of the disk
 HDR_DISK      .equ    HDR + 6
@@ -120,6 +124,13 @@ HDR_ORDER     .equ    HDR + 448
 BOOTINFO      .equ    0x7e00          ; for the game, see above
 BI_BANKS      .equ    BOOTINFO + 20   ; the RAM banks (16 bytes)
 STORE_BANK    .equ    0x40            ; the store (tools/levelimg.py)
+MUS_BANK      .equ    0x6a            ; the songs when the store is in RAM, up
+                                      ;   to $7F (MM_MUSBANK, tools/levelimg.py)
+P2_OFS        .equ    0x5a5a          ; the second probe: its offset, and the
+P2_XOR        .equ    0xa55a          ;   word of bank b is P2_XOR ^ b
+ROMVER        .equ    0xfffb59        ; the ROM version (IDROUTINE: Y)
+FW_TOP        .equ    0xe11624        ; the first bank after the RAM that the
+FW_TOP0       .equ    0xe1161a        ;   firmware found; on ROM 00 here
 BUF           .equ    0x7a00          ; a data block
 SEG_PIC       .equ    1               ; segment flag: the title picture
 SEG_B1        .equ    2               ; segment flag: a B1 stream
@@ -340,18 +351,26 @@ jmlInst:      .byte   0x5c, 0x00, 0x00, 0x00 ; jml
 
 ;;; checkMemory: the RAM banks $00-$7F in BI_BANKS; carry clear when
 ;;; banks $02-$0D and $10-$3F are RAM. Else carry set, A = the first of
-;;; them that is not RAM. Each bank gets 2 bytes at $8000 (the bank number
-;;; and its complement), the highest first: a bank that repeats a lower one
-;;; then fails. $0E-$0F: a ROM 03 has none (its 1 MB is $00-$0D, $E0-$E1).
+;;; them that is not RAM. As MiniMemoryTester finds RAM (DetectRam of
+;;; github.com/digarok/mmt): each bank, the highest first, gets its inverted
+;;; number at offset 0, then each is read back from the top down; a bank that
+;;; repeats a lower one then fails. The earlier test (2 bytes at $8000, read
+;;; from the bottom up) failed a ROM 01 whose 4 MB card MiniMemoryTester
+;;; passes. MiniMemoryTester also writes banks $80-$FE: they are not RAM,
+;;; and $BC:0000 is the configuration byte of a TransWarp GS. Then a second
+;;; probe at another offset, with other values and in the same order; a
+;;; bank is RAM when one of the two finds it, so that one bad byte does not
+;;; stop the game. In both probes the access to the same offset just before
+;;; each read is in another bank, so no read comes from the accelerator cache
+;;; line of its own write. $0E-$0F hold no fixed data (src/iigs/memmap.inc);
+;;; the level window takes them when they are RAM (a ROM 03 has them on the
+;;; board, a ROM 01 on the card).
 checkMemory:  stz     dp:PTR
-              lda     #0x80
-              sta     dp:PTR+1
-              ldy     ##1
+              stz     dp:PTR+1
               lda     #0x7f
 1$:           sta     dp:PTR+2
-              sta     [PTR]
               eor     #0xff
-              sta     [PTR],y
+              sta     [PTR]
               eor     #0xff
               dec     a
               cmp     #2
@@ -362,12 +381,10 @@ checkMemory:  stz     dp:PTR
               bpl     0$
               lda     #3
               sta     abs:BI_BANKS
-              lda     #2
+              lda     #0x7f
 2$:           sta     dp:PTR+2
-              cmp     [PTR]
-              bne     4$
               eor     #0xff
-              cmp     [PTR],y
+              cmp     [PTR]
               bne     4$
               lda     dp:PTR+2              ; a RAM bank: its bit
               jsr     abs:bankBit
@@ -375,8 +392,35 @@ checkMemory:  stz     dp:PTR
               ora     dp:TMP
               sta     abs:BI_BANKS,x
 4$:           lda     dp:PTR+2
-              inc     a
-              bpl     2$
+              dec     a
+              cmp     #2
+              bcs     2$
+              ldx     ##P2_OFS              ; the second probe
+              stx     dp:PTR
+              lda     #0x7f
+3$:           sta     dp:PTR+2
+              jsr     abs:p2Word
+              sta     [PTR]
+              sep     #0x20
+              lda     dp:PTR+2
+              dec     a
+              cmp     #2
+              bcs     3$
+              lda     #0x7f
+7$:           sta     dp:PTR+2
+              jsr     abs:p2Word
+              cmp     [PTR]
+              sep     #0x20
+              bne     9$
+              lda     dp:PTR+2
+              jsr     abs:bankBit
+              lda     abs:BI_BANKS,x
+              ora     dp:TMP
+              sta     abs:BI_BANKS,x
+9$:           lda     dp:PTR+2
+              dec     a
+              cmp     #2
+              bcs     7$
               lda     #2                    ; the fixed banks
 5$:           jsr     abs:isBank
               bcc     8$
@@ -389,6 +433,14 @@ checkMemory:  stz     dp:PTR
               clc
               rts
 8$:           sec
+              rts
+
+;;; p2Word: C = the word of the second probe for bank A; A is 16 bits
+;;; after it. Its two bytes are never equal, so a bank with no RAM, which
+;;; gives one value on both reads, fails.
+p2Word:       rep     #0x20
+              and     ##0x00ff
+              eor     ##P2_XOR
               rts
 
 ;;; isBank: carry set when bank A is RAM (BI_BANKS). A stays.
@@ -420,8 +472,12 @@ bankBit:      pha
               pla
               rts
 
-;;; storeMode: STOREMODE = 1 when the banks of the store are RAM, then
-;;; LASTDISK = the number of disks; else the last disk with other data.
+;;; storeMode: STOREMODE = 1 when the banks of the store and of the songs
+;;; (MUS_BANK-$7F) are RAM, then LASTDISK = the number of disks; else the
+;;; last disk with other data. In that mode the game writes the songs to
+;;; MUS_BANK and up with no check (a 7 MB IIgs has no $70-$7F). In the
+;;; other mode $6A-$7F must not show as RAM: src/iigs/s_sound65.s reads
+;;; songs from MUS_BANK when its bit is set.
 storeMode:    stz     dp:STOREMODE
               lda     abs:HDR_STOREBANKS
               beq     3$
@@ -434,40 +490,137 @@ storeMode:    stz     dp:STOREMODE
               inc     a
               cmp     dp:TMP+1
               bcc     1$
+              lda     #MUS_BANK
+2$:           jsr     abs:isBank
+              bcc     3$
+              inc     a
+              bpl     2$
               inc     dp:STOREMODE
 3$:           lda     dp:STOREMODE
               beq     4$
               lda     dp:NDISKS
               bra     5$
-4$:           lda     abs:HDR_RESDISKS
+4$:           lda     abs:BI_BANKS+13       ; banks $68-$69 stay
+              and     #0x03
+              sta     abs:BI_BANKS+13
+              stz     abs:BI_BANKS+14       ; $70-$7F
+              stz     abs:BI_BANKS+15
+              lda     abs:HDR_RESDISKS
 5$:           sta     dp:LASTDISK
               ldx     abs:HDR_SETTINGS      ; (the header of disk 1)
               stx     abs:settingsBlock
               rts
 
-;;; cannotRun: the text screen that says why the game cannot run. A = the
-;;; first bank that is not RAM: the IIgs has about A / 16 MB.
-cannotRun:    lsr     a
-              lsr     a
-              lsr     a
-              lsr     a
-              bne     1$
-              ldx     ##msgLess             ; less than 1 MB
-              stx     dp:TMP
-              ldx     ##msgHasNum
-              bra     2$
-1$:           ora     #'0'
-              sta     abs:msgHasNum
-              ldx     ##msgMB
-              stx     dp:TMP
-              ldx     ##msgHasNum+1
-2$:           ldy     ##0                   ; the size and the end of the line
-3$:           lda     (TMP),y
-              sta     abs:0,x
-              beq     4$
-              inx
-              iny
+;;; fwBanks: A = the first bank after the RAM that the firmware found at
+;;; reset (its Memory Manager writes each bank from $7F down and takes the
+;;; highest that holds its word: ROM 00 $FF:02F1, ROM 01 $FF:02FC, ROM 03
+;;; $FC:0305), 0 on another ROM or a value out of range. Z set: A is 0.
+fwBanks:      lda     long:ROMVER
+              beq     1$
+              cmp     #1
+              beq     2$
+              cmp     #3
+              beq     2$
+              bra     9$
+1$:           lda     long:FW_TOP0
               bra     3$
+2$:           lda     long:FW_TOP
+3$:           cmp     #2
+              bcc     9$
+              cmp     #0x81
+              bcc     8$
+9$:           lda     #0
+8$:           rts
+
+;;; putKB: C (16-bit A) banks of 64K as "nK." and the end of the text, at
+;;; X. Out: A is 8 bits.
+putKB:        asl     a
+              asl     a
+              asl     a
+              asl     a
+              asl     a
+              asl     a
+              sta     dp:NUM
+              ldy     ##0
+1$:           lda     ##'0'
+              sta     dp:DIGIT
+              lda     dp:NUM
+2$:           cmp     abs:tens,y
+              bcc     3$
+              sbc     abs:tens,y
+              inc     dp:DIGIT
+              bra     2$
+3$:           sta     dp:NUM
+              sep     #0x20
+              lda     dp:DIGIT
+              cpy     ##0                   ; no 0 before the thousands
+              bne     4$
+              cmp     #'0'
+              beq     5$
+4$:           sta     abs:0,x
+              inx
+5$:           rep     #0x20
+              iny
+              iny
+              cpy     ##8
+              bcc     1$
+              sep     #0x20
+              lda     #'K'
+              sta     abs:0,x
+              lda     #'.'
+              sta     abs:1,x
+              stz     abs:2,x
+              rts
+
+;;; hexByte: A (8 bits) as 2 hexadecimal digits at X.
+hexByte:      pha
+              lsr     a
+              lsr     a
+              lsr     a
+              lsr     a
+              jsr     abs:hexDigit
+              sta     abs:0,x
+              pla
+              and     #0x0f
+              jsr     abs:hexDigit
+              sta     abs:1,x
+              rts
+hexDigit:     cmp     #10
+              bcc     1$
+              adc     #6                    ; (carry set: + 7)
+1$:           adc     #'0'
+              rts
+
+;;; cannotRun: the text screen that says why the game cannot run. A = the
+;;; first fixed bank that is not RAM. It shows the RAM found (the banks of
+;;; BI_BANKS and the 128K of $E0-$E1) and the RAM that the firmware counts
+;;; (TotalMem of its Memory Manager: fwBanks + 2 banks), so that a bank that
+;;; is missing inside the firmware's count is clear.
+cannotRun:    ldx     ##bankNum
+              jsr     abs:hexByte
+              ldy     ##2                   ; the banks in BI_BANKS, + $E0-$E1
+              ldx     ##15
+1$:           lda     abs:BI_BANKS,x
+2$:           asl     a
+              bcc     3$
+              iny
+3$:           cmp     #0
+              bne     2$
+              dex
+              bpl     1$
+              rep     #0x20
+              tya
+              ldx     ##foundNum
+              jsr     abs:putKB
+              jsr     abs:fwBanks
+              sta     dp:FWEND
+              beq     4$
+              rep     #0x20
+              and     ##0x00ff
+              inc     a
+              inc     a
+              ldx     ##fwNum
+              jsr     abs:putKB
 4$:           jsr     abs:textScreen
               sep     #0x10
               ldx     #.byte0 msgSorry
@@ -479,8 +632,16 @@ cannotRun:    lsr     a
               ldx     #.byte0 msgNeeds
               ldy     #.byte1 msgNeeds
               jsr     abs:printAt
-              ldx     #.byte0 msgHas
-              ldy     #.byte1 msgHas
+              ldx     #.byte0 msgFound
+              ldy     #.byte1 msgFound
+              jsr     abs:printAt
+              lda     dp:FWEND
+              beq     5$
+              ldx     #.byte0 msgFw
+              ldy     #.byte1 msgFw
+              jsr     abs:printAt
+5$:           ldx     #.byte0 msgBank
+              ldy     #.byte1 msgBank
               jsr     abs:printAt
               ldx     #.byte0 msgAdd
               ldy     #.byte1 msgAdd
@@ -1328,6 +1489,7 @@ rowHi:        .byte   0x04,0x04,0x05,0x05,0x06,0x06,0x07,0x07
 
 magic:        .ascii  "DOOMGS"
 bitOf:        .byte   1, 2, 4, 8, 16, 32, 64, 128
+tens:         .word   1000, 100, 10, 1      ; putKB
 settingsBlock: .word  0                     ; DOOM.SETTINGS on disk 1
 
 LEVEL:        .byte   0, 1, 3, 4            ; the color of each glyph value
@@ -1358,15 +1520,19 @@ msgSorry2:    .byte   8, 4
               .asciz  "RUN DOOM."
 msgNeeds:     .byte   10, 4
               .asciz  "DOOM NEEDS 4 MB OF MEMORY."
-msgHas:       .byte   11, 4
-              .ascii  "THIS APPLE IIGS HAS "
-msgHasNum:    .ascii  "0"                   ; then " MB." or, from msgHasNum,
-              .space  16                    ;   "LESS THAN 1 MB."
-msgMB:        .asciz  " MB."
-msgLess:      .asciz  "LESS THAN 1 MB."
-msgAdd:       .byte   14, 4
+msgFound:     .byte   11, 4
+              .ascii  "MEMORY FOUND: "
+foundNum:     .space  7                     ; "8320K." and the end (putKB)
+msgFw:        .byte   12, 4
+              .ascii  "THE FIRMWARE REPORTS "
+fwNum:        .space  7
+msgBank:      .byte   13, 4
+              .ascii  "BANK $"
+bankNum:      .ascii  "00"
+              .asciz  " IS MISSING."
+msgAdd:       .byte   15, 4
               .asciz  "ADD A MEMORY CARD, OR SET THE"
-msgAdd2:      .byte   15, 4
+msgAdd2:      .byte   16, 4
               .asciz  "EMULATOR TO 4 MB OF MEMORY."
 msgInsert:    .byte   18, 4
               .ascii  "INSERT DISK "

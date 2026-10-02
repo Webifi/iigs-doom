@@ -1,8 +1,9 @@
 ;;; The fixed data addresses of the game (the memory map of
-;;; src/iigs/iigs.scm). Only banks $00-$0D and $10-$3F: they are the banks
-;;; that every 4 MB IIgs has (a ROM 03 has no $0E-$0F, MAME -ramsize 4M no
-;;; $40). The level window (src/iigs/w_level65.s) takes the banks after
-;;; these and the extra banks found at boot.
+;;; src/iigs/iigs.scm). Only banks $00-$0D and $10-$3F: every 4 MB IIgs
+;;; has them (MAME -ramsize 4M has no $40). $0E-$0F are RAM on every 4 MB
+;;; IIgs too (a ROM 03 has fast RAM $00-$0F), but they hold no fixed data.
+;;; The level window (src/iigs/w_level65.s) takes the banks after these and
+;;; the extra banks found at boot.
 ;;;
 ;;; A hot table keeps the low 15 bits of its old address, so it keeps its
 ;;; cache slots (slot = address & $7FFF); a table may move to the other half
