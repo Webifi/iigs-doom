@@ -64,6 +64,9 @@ VW_TWOWN      .equ    (MM_BV + 0xb84c) ; the TransWarp GS configuration of the
                                       ;   owner (bmAccelOff of m_menu65.s)
 VW_TWON       .equ    (MM_BV + 0xb84e) ; VW_TWTAG: a TransWarp GS, its IRQ
 VW_TWTAG      .equ    0x7a5c          ;   logic off by the game
+VW_TWIRQ      .equ    (MM_BV + 0xb838) ; TWGS SLOW IRQ (DISPLAY & SOUND): 1 CARD, play
+                                      ;   keeps the card's AppleTalk/IRQ setting;
+                                      ;   0 OFF, the game turns it off
 ;;; The sign of a slow step (bmBusyOn of src/iigs/m_menu65.s).
 VW_LMAP       .equ    (MM_BV + 0xb850) ; the map of the last load (bmLoad)
 VW_SGON       .equ    (MM_BV + 0xb852) ; 1: the sign is on the screen
