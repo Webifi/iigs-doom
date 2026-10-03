@@ -9,9 +9,14 @@
 ;;; that it read last, so I_GetTime needs no interrupt.
 ;;; Alarm: a silent one-shot oscillator on the same ramp, with its
 ;;; interrupt on: it halts and interrupts after ALARM_FREQ steps, and
-;;; IIGS_Alarm starts it again (src/iigs/irq65.s).
+;;; the interrupt starts it again (src/iigs/irq65.s).
 ;;; Each DOC sequence of the main code masks interrupts: the interrupt also
 ;;; uses the GLU.
+;;; Volume: bits 3-0 of the GLU control register are the volume of the
+;;; owner (the Control Panel). The game does not change it.
+;;; IIGS_InitDocVolume reads the system volume ($E100CA) into DOCVOL, and
+;;; each write of the control register uses that value. IIGS_InitDocTimer
+;;; calls it first, and so does the sound shutdown (I_Error can come before).
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -22,6 +27,9 @@ SOUNDCTL      .equ    0xe0c03c        ; bit 7 busy, bit 6 RAM, bit 5 auto increm
 SOUNDDATA     .equ    0xe0c03d        ; bits 3-0 volume
 SOUNDADRL     .equ    0xe0c03e
 SOUNDADRH     .equ    0xe0c03f
+SYSVOLUME     .equ    0xe100ca        ; the system volume, bits 3-0
+DOCVOL        .equ    0xff            ; the volume for SOUNDCTL, bits 3-0: the byte
+DOCVOL_LONG   .equ    0x0009ff        ;   $09FF of the direct page (src/iigs/iigs.scm)
 
 DOC_OSCS      .equ    32              ; scan rate 894886 Hz / (32 + 2) = 26320 Hz
 TIMER_OSC     .equ    31
@@ -53,6 +61,7 @@ upCount:      .space  2               ;   and the bytes of a page
               .section farcode, text
               .public IIGS_InitDocTimer
 IIGS_InitDocTimer:
+              jsl     long:IIGS_InitDocVolume
               php
               sei
               sep     #0x20
@@ -64,11 +73,7 @@ IIGS_InitDocTimer:
               bne     1$
 
               ;; the ramp: byte i = i, byte 0 = 255 because 0 halts the oscillator
-2$:           lda     long:SOUNDCTL
-              bmi     2$
-              and     #0x0f
-              ora     #0x60                 ; RAM, auto increment
-              sta     long:SOUNDCTL
+              jsr     .kbank docRamMode
               lda     #0
               sta     long:SOUNDADRL
               lda     #TIMER_PAGE
@@ -102,7 +107,7 @@ IIGS_InitDocTimer:
               lda     #0
               jsr     .kbank docSet
               ldx     ##ALARM_OSC           ; the alarm: halted until
-              lda     #ALARM_FREQ           ;   IIGS_Alarm
+              lda     #ALARM_FREQ           ;   a song starts it
               jsr     .kbank docSet
               ldx     ##(0x20 + ALARM_OSC)
               lda     #0
@@ -125,7 +130,7 @@ IIGS_InitDocTimer:
               stz     .near (tmSteps+2)
               plp
               rtl
-
+              .space  7                     ; (I_GetTime keeps its address)
 
 
 ;;; ***************************************************************************
@@ -158,32 +163,42 @@ I_GetTime:    php
 
 ;;; ***************************************************************************
 ;;;
-;;; IIGS_Alarm - in the interrupt: read the DOC interrupt register (this
-;;; clears the interrupt) and start the alarm again. A, X, Y stay.
+;;; IIGS_InitDocVolume - DOCVOL = the system volume. IIGS_InitDocTimer and
+;;; the sound shutdown call it. This is the only volume that the game writes
+;;; to the control register.
 ;;;
 ;;; ***************************************************************************
 
-              .public IIGS_Alarm
-IIGS_Alarm:   php
+              .public IIGS_InitDocVolume
+IIGS_InitDocVolume:
+              php
               sep     #0x20
-              pha
-1$:           lda     long:SOUNDCTL
-              bmi     1$
-              and     #0x0f                 ; registers, no auto increment
-              sta     long:SOUNDCTL
-              lda     #0xe0
-              sta     long:SOUNDADRL
-              lda     long:SOUNDDATA        ; the first read only starts the access
-              lda     long:SOUNDDATA
-2$:           lda     long:SOUNDCTL         ; busy clear, then address and data
-              bmi     2$                    ;   with nothing between them
-              lda     #(0xa0 + ALARM_OSC)
-              sta     long:SOUNDADRL
-              lda     #ALARM_CTL
-              sta     long:SOUNDDATA
-              pla
+              lda     long:SYSVOLUME
+              and     #0x0f
+              sta     long:DOCVOL_LONG
+              sta     long:(rampVolume+1)   ; cache the same byte in the clock-read immediate
               plp
               rtl
+
+;;; docRegMode: wait for the GLU, then registers, no auto increment. 8-bit A.
+;;; Long addresses only: in a build with TICSTEP > 1 the interrupt reads
+;;; the clock, and D is that of the interrupted code.
+docRegMode:   lda     long:SOUNDCTL
+              bmi     docRegMode
+              lda     long:DOCVOL_LONG
+              sta     long:SOUNDCTL
+              rts
+
+;;; docRamMode: wait for the GLU, then DOC RAM, auto increment. 8-bit A.
+docRamMode:   lda     long:SOUNDCTL
+              bmi     docRamMode
+              lda     dp:DOCVOL
+              ora     #0x60
+              sta     long:SOUNDCTL
+              rts
+
+              .space  2                     ; (the room of IIGS_Alarm: the code
+                                            ;   after it keeps its address)
 
 ;;; IIGS_AlarmOff: the alarm halted (its interrupt waits no more).
               .public IIGS_AlarmOff
@@ -202,7 +217,7 @@ IIGS_AlarmOff:
 docSet:       pha
 1$:           lda     long:SOUNDCTL
               bmi     1$
-              and     #0x0f                 ; registers, no auto increment
+              lda     dp:DOCVOL             ; registers, no auto increment
               sta     long:SOUNDCTL
               txa
               sta     long:SOUNDADRL
@@ -211,10 +226,11 @@ docSet:       pha
               rts
 
 ;;; readRamp: A = the data register of the timer oscillator. 8-bit A.
-readRamp:
-1$:           lda     long:SOUNDCTL
-              bmi     1$
-              and     #0x0f
+;;; The immediate is filled from SYSVOLUME by IIGS_InitDocVolume. This keeps
+;;; the clock read at its original cost and works with any interrupted D.
+readRamp:     lda     long:SOUNDCTL
+              bmi     readRamp
+rampVolume:   lda     #0
               sta     long:SOUNDCTL
               lda     #(0x60 + TIMER_OSC)
               sta     long:SOUNDADRL
@@ -238,7 +254,7 @@ IIGS_DocWrite2:
               tax
 1$:           lda     long:SOUNDCTL
               bmi     1$
-              and     #0x0f
+              lda     dp:DOCVOL
               ora     #0x20                 ; registers, auto increment
               sta     long:SOUNDCTL
               txa
@@ -267,7 +283,7 @@ IIGS_DocRead: php
               tax
 1$:           lda     long:SOUNDCTL
               bmi     1$
-              and     #0x0f
+              lda     dp:DOCVOL
               sta     long:SOUNDCTL
               txa
               sta     long:SOUNDADRL
@@ -296,7 +312,7 @@ IIGS_DocUpload:
               sep     #0x20
 2$:           lda     long:SOUNDCTL
               bmi     2$
-              and     #0x0f
+              lda     dp:DOCVOL
               ora     #0x60                 ; RAM, auto increment
               sta     long:SOUNDCTL
               rep     #0x20
@@ -398,7 +414,7 @@ IIGS_RepairDocTimer:
               jsr     .kbank waitSet
 1$:           lda     long:SOUNDCTL
               bmi     1$
-              and     #0x0f
+              lda     dp:DOCVOL
               ora     #0x60
               sta     long:SOUNDCTL
               lda     #0
@@ -445,7 +461,7 @@ IIGS_RepairDocTimer:
 waitSet:      pha
 1$:           lda     long:SOUNDCTL
               bmi     1$
-              and     #0x0f
+              lda     dp:DOCVOL
               sta     long:SOUNDCTL
               lda     #0
               sta     long:SOUNDADRH
