@@ -23,7 +23,7 @@
 
               .extern _Dp, _g_player, _g_gamemap
               .extern R_PointToAngle3, finesineapprox, IIGS_MulLo16
-              .extern _Mul32, _Div16, _Div32, _UDivMod32
+              .extern _Mul32, _Div16, _Div32, _UDivMod32, MA, MB, MR, umul16
               .extern IIGS_DocWrite2, IIGS_DocRead, IIGS_DocUpload, IIGS_DecodeSound
               .extern IIGS_CopyHuge, IIGS_AlarmOff
               .extern I_Error, printf
@@ -700,43 +700,54 @@ docStop:      lda     ##CTL_STOPPED
               jsl     long:IIGS_DocWrite2
               rts
 
-;;; docVolume: I_UpdateSoundParams(X / 2, SS_VOL, SS_SEP): the pan law of
-;;; Chocolate Doom (sep 128: vol on each side), with 16-bit products as C.
-docVolume:    stx     .near SS_C
-              lda     ##254                 ; left = vol * (254 - sep) / 127
+;;; docVolume: I_UpdateSoundParams(X / 2, SS_VOL, SS_SEP). X is 2 * the
+;;; channel, as SS_C. The pan law is the law of Chocolate Doom, in the range
+;;; of the DOC volume registers: each sample of the sound bank is at full
+;;; scale, and the level of a sound is in the register, as other IIgs
+;;; software does it (tools/sndbank.py). vol is 0-120. W = vol * K / 256,
+;;; with K the word of the sound that plays in sfxK (CHANSFX). The even
+;;; oscillator, the left, gets W * (254 - sep) / 256, the odd one, the right,
+;;; W * sep / 256. W stops at panCap[sep], so the larger side is 255 at most
+;;; and the two sides keep their ratio (no clamp for each side). The loudest
+;;; sounds have K = 1111: a close sound at sep 127 gets 255 on both. The
+;;; products fit 16 bits, and there is no division.
+docVolume:    lda     abs:.near CHANSFX,x
+              asl     a
+              tay
+              lda     .near sfxK,y
+              ldx     .near SS_VOL
+              sta     dp:.tiny MA
+              stx     dp:.tiny MB
+              jsl     long:umul16           ; vol * K
+              lda     dp:.tiny (MR+1)       ; W: the bits 8-23
+              sta     dp:.tiny (_Dp+4)
+              lda     .near SS_SEP
+              asl     a
+              tax
+              lda     .near panCap,x
+              cmp     dp:.tiny (_Dp+4)
+              bcs     1$
+              sta     dp:.tiny (_Dp+4)      ; W stops here
+1$:           ldx     dp:.tiny (_Dp+4)
+              lda     .near SS_SEP          ; right = W * sep / 256
+              jsl     long:IIGS_MulLo16
+              and     ##0xff00
+              sta     dp:.tiny (_Dp+6)
+              lda     ##254                 ; left = W * (254 - sep) / 256
               sec
               sbc     .near SS_SEP
-              ldx     .near SS_VOL
+              ldx     dp:.tiny (_Dp+4)
               jsl     long:IIGS_MulLo16
-              ldx     ##127
-              jsl     long:_Div16
-              jsr     .kbank clamp255
-              sta     .near SS_T
-              lda     .near SS_SEP          ; right = vol * sep / 127
-              ldx     .near SS_VOL
-              jsl     long:IIGS_MulLo16
-              ldx     ##127
-              jsl     long:_Div16
-              jsr     .kbank clamp255
               xba
-              ora     .near SS_T
+              and     ##0x00ff
+              ora     dp:.tiny (_Dp+6)
               sta     dp:.tiny _Dp
               lda     .near SS_C
               clc
               adc     ##DOC_VOLUME
               jsl     long:IIGS_DocWrite2
-              ldx     .near SS_C
               rts
-
-;;; clamp255: C = C limited to 0..255.
-clamp255:     cmp     ##0
-              bpl     1$
-              lda     ##0
-              rts
-1$:           cmp     ##256
-              bcc     2$
-              lda     ##255
-2$:           rts
+              .space  5                     ; the routines after it keep their places
 
 ;;; pair: _Dp[0-1] = the low byte of C in both bytes.
 pair:         and     ##0x00ff
@@ -822,7 +833,10 @@ soundChosen:  inc     .near USECOUNT        ; the age of its use
               clc
               adc     ##DOC_FREQHI
               jsl     long:IIGS_DocWrite2
-              ldx     .near SS_C            ; the volume
+              ldx     .near SS_C            ; chansfx = the sound in DOC RAM,
+              lda     .near SS_ID           ;   for docVolume (the volume)
+              lsr     a
+              sta     abs:.near CHANSFX,x
               jsr     .kbank docVolume
               ldx     .near SS_ID           ; POINTER: the page
               lda     long:SND_PAGE,x
@@ -847,12 +861,9 @@ soundChosen:  inc     .near USECOUNT        ; the age of its use
               clc
               adc     ##DOC_CONTROL
               jsl     long:IIGS_DocWrite2
-              ldx     .near SS_C            ; chansfx = the sound in DOC RAM
-              lda     .near SS_ID
-              lsr     a
-              sta     abs:.near CHANSFX,x
               sec
               rts
+              .space  3                     ; the routines after it keep their places
 
 ;;; cacheSound: I_CacheSound(SS_ID / 2): the place in the pool (a multiple
 ;;; of 256 << size) where the newest sound to remove is the oldest (a free
@@ -1287,6 +1298,13 @@ sfxPriority:  .byte   0, 64, 64, 64, 64, 118, 64, 64      ; none pistol shotgn s
               .byte   98, 94, 70, 70, 32, 32, 70, 70      ; sgtsit brssit sgtatk claw pldeth pdiehi podth1 podth2
               .byte   70, 70, 70, 70, 32, 120, 120, 120   ; podth3 bgdth1 bgdth2 sgtdth brsdth posact bgact dmact
               .byte   78, 60, 64, 60, 60                  ; noway barexp punch tink getpow
+
+;;; The tables of docVolume: sfxK (one word for each sound, in the order of
+;;; sfxenum_t) and panCap (one word for each separation 0 to 254).
+;;; tools/sndbank.py makes them with the sound bank. The linker script puts
+;;; them after the last near data, so no other data moves.
+              .section sfxvol, rodata
+#include "sfxvol.inc"
 
 ;;; The volumes of the sound effects and of the music, 0-15.
               .section near, data

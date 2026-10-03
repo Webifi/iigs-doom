@@ -86,8 +86,9 @@
             (section coldfar))
     (memory FarBss (address (#x0dd000 . #x0dffff))
             (section zfar))
+    ;; sfxvol (src/iigs/s_sound65.s, 616 bytes) comes after the last near data.
     (memory NearData (address (#x020000 . #x027aff))
-            (section near cnear switch))
+            (section near cnear switch (sfxvol #x027600)))
     (memory NearBss (address (#x027b00 . #x02ffff))
             (section znear))
     ;; Code banks 03-05 by cache slot. The view stores (bank 01

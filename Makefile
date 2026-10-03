@@ -153,6 +153,15 @@ $(WADOUT)/sounds.bin: $(WAD) tools/sndbank.py src/iigs/offsets.inc $(WADOUT)/mus
 	mkdir -p $(WADOUT)
 	$(PYTHON) tools/sndbank.py $(WAD) src/iigs/offsets.inc $@ $(WADOUT)/music.bin
 
+# The tables of docVolume (the level of each sound, the limit of the pan),
+# from the same levels as the bank.
+$(BUILD)/gen/sfxvol.inc: $(WAD) tools/sndbank.py src/iigs/offsets.inc
+	mkdir -p $(BUILD)/gen
+	$(PYTHON) tools/sndbank.py $(WAD) src/iigs/offsets.inc - --law $@
+
+$(OBJ)/s_sound65.o: $(BUILD)/gen/sfxvol.inc
+$(OBJ)/s_sound65.o: ASFLAGS += -I $(BUILD)/gen
+
 # All episode songs: the level store owns their disk bytes. On 8 MB the
 # loader assembles MUSBANK from those units; only INTRO is also a boot segment.
 # data/music holds the converted units (stream, pitch tables, DOC samples).
