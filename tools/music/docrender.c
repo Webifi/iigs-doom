@@ -27,6 +27,15 @@ typedef struct {
     int fade;                      /* samples of a halt fade left */
 } Osc;
 static int ramp = 0;
+/* DOCR_VOLTAB: 256 floats, the heard gain of each DOC register. Unset, the
+ * register is the gain (MAME, a linear board). DOCR_PARTS prints each
+ * descriptor's RMS on that same scale. */
+static float voltab[256];
+static int use_law = 0;
+static int parts = 0;
+static int cur_desc = 0;
+static int acc_parts = 0;
+static double part_e[256];
 
 static Osc osc[NV];
 
@@ -58,7 +67,8 @@ static void run(Osc *o, float *out, long a, long b)
     uint32_t acc = o->acc;
     int halted = o->ctl & 1;
     for (long s = a; s < b; s++) {
-        float target = halted ? 0 : o->vol;
+        float heard = use_law ? voltab[o->vol] : (float)o->vol;
+        float target = halted ? 0 : heard;
         if (ramp) { o->gv += (target - o->gv) / ramp; } else o->gv = target;
         if (halted && --o->fade <= 0) break;
         uint32_t altram = acc >> resshift;
@@ -66,7 +76,9 @@ static void run(Osc *o, float *out, long a, long b)
         acc += o->freq;
         uint8_t d = ram[(ramptr + wtptr) & 0xffff];
         if (d == 0) { o->ctl |= 1; break; }
-        out[2 * s + ch] += (float)((int)d - 128) * o->gv;
+        float sample = (float)((int)d - 128) * o->gv;
+        out[2 * s + ch] += sample;
+        if (parts && acc_parts) part_e[cur_desc] += (double)sample * (double)sample;
         if (altram >= wtsize) {
             if (mode != 0) { o->ctl |= 1; break; }
             acc -= wtsize << resshift;
@@ -99,6 +111,19 @@ int main(int argc, char **argv)
     double gain = argc > 5 ? atof(argv[5]) : 1.0;
     /* DESCRIPTORS: a comma list; only the voices playing those tables sound */
     ramp = getenv("DOCR_RAMP") ? atoi(getenv("DOCR_RAMP")) : 0;
+    parts = getenv("DOCR_PARTS") ? 1 : 0;
+    const char *vt = getenv("DOCR_VOLTAB");
+    if (vt) {
+        FILE *tf = fopen(vt, "r");
+        if (!tf) { perror(vt); return 1; }
+        for (int i = 0; i < 256; i++) {
+            if (fscanf(tf, "%f", &voltab[i]) != 1) {
+                fprintf(stderr, "voltab: wanted 256 floats\n"); return 1;
+            }
+        }
+        fclose(tf);
+        use_law = 1;
+    }
     int mask[256];
     for (int i = 0; i < 256; i++) mask[i] = argc <= 6;
     if (argc > 6) {
@@ -206,6 +231,8 @@ int main(int argc, char **argv)
         if (stop || b >= total) { end = stop ? a : total; if (!stop) b = total; }
         if (b > total) b = total;
         for (int v = 0; v < NV; v++) {
+            cur_desc = vdesc[v];
+            acc_parts = mask[vdesc[v]];
             if (mask[vdesc[v]]) run(&osc[v], out, a, b);
             else { float *junk = calloc(2 * (size_t)(b - a + 1), sizeof(float)); run(&osc[v], junk - 2 * a, a, b); free(junk); }
         }
@@ -231,5 +258,11 @@ int main(int argc, char **argv)
     }
     fclose(o);
     if (clip) printf("%ld samples clipped\n", clip);
+    if (parts) {
+        for (int d = 0; d < 256; d++) {
+            if (part_e[d] <= 0) continue;
+            printf("part %d rms %.3f\n", d, sqrt(part_e[d] / (double)end));
+        }
+    }
     return 0;
 }

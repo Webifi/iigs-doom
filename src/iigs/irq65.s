@@ -124,18 +124,11 @@ wake:         xba
               cmp     #0xf0                 ; (carry: the low byte only)
               and     #0x0f
               tax
-              lda     #ALARM_FREQLO
-              pha
-              lda     abs:MB_WLO,x
-              jsr     abs:docFrequency       ; preserve the alarm-start timing
-              bcs     1$
-              lda     #ALARM_FREQHI
-              pha
-              lda     abs:MB_WHI,x
-              jsr     abs:docFrequency
-              sta     abs:MB_FCHI           ; (musResume restarts with it)
-1$:           lda     #ALARM_CONTROL        ; a halted one-shot counts again
-              jsr     abs:docAddress
+              jsr     abs:docWaitFrequency
+1$:           lda     long:SOUNDCTL
+              bmi     1$
+              lda     #ALARM_CONTROL        ; a halted one-shot counts again
+              sta     long:SOUNDADRL
               lda     #ALARM_CTL
               sta     long:SOUNDDATA
 next:         lda     abs:MB_STREAM,y
@@ -312,38 +305,36 @@ cNoteS:       sta     abs:MB_V
               sta     long:SOUNDDATA
               bra     noteLevel
 ;;; docAddress: A = address; wait for the GLU, then set its pointer.
-;;; X, Y, B and carry stay unchanged. The caller loads and stores the data
-;;; itself. The clear-busy branch costs one cycle more than BMI, keeping
-;;; the alarm-control store on v1.2's CPU cycle after its frequency writes.
-;;; This is 34 fewer cycles per write, including the caller's data store.
-docAddress:   pha
+;;; X, Y and carry stay unchanged. B is 0 on entry and return. Preserve
+;;; the address in B instead of writing it to the stack; the caller loads
+;;; and stores the data itself. Every access still waits for the GLU.
+docAddress:   xba
 1$:           lda     long:SOUNDCTL
-              bpl     2$
-              bra     1$
-2$:           pla
+              bmi     1$
+              lda     #0
+              xba
               sta     long:SOUNDADRL
               rts
               .section irqcold, text
-;;; Frequency writes retain v1.2's call and return sequence. In particular,
-;;; the following alarm-control data store starts each wait on the same
-;;; CPU cycle as before; savings begin after that store. A and carry return,
-;;; B = 0, and this entry consumes the address argument itself.
-docFrequency: pha
+;;; The wait command supplies the frequency index in X and carry marks
+;;; a low-byte-only update. One call writes the same low, then optional
+;;; high byte; no stack arguments and no temporary register saves.
+docWaitFrequency:
 1$:           lda     long:SOUNDCTL
               bmi     1$
-              lda     4,s
+              lda     #ALARM_FREQLO
               sta     long:SOUNDADRL
-              pla
+              lda     abs:MB_WLO,x
               sta     long:SOUNDDATA
-              xba
-              lda     2,s
-              sta     3,s
-              lda     1,s
-              sta     2,s
-              pla
-              lda     #0
-              xba
-              rts
+              bcs     3$
+2$:           lda     long:SOUNDCTL
+              bmi     2$
+              lda     #ALARM_FREQHI
+              sta     long:SOUNDADRL
+              lda     abs:MB_WHI,x
+              sta     long:SOUNDDATA
+              sta     abs:MB_FCHI           ; musResume restarts with it
+3$:           rts
 ;;; ---------------------------------------------------------------------------
 ;;; The rare commands, in the cache slots $5C00-$5CFF (src/iigs/iigs.scm):
 ;;; the pitch changes, the loop of an attack table, the end of a song.
