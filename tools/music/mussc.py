@@ -2549,7 +2549,13 @@ class ScSong:
             img[5]=1  # stream extension: 0xBE voice page, phase-preserving pointer
         if getattr(self,"crossfade_stats",None) or getattr(self,"pan_stats",None) or getattr(self,"fixed_route_count",0):img[5]|=2  # 0xBF raw control/pan
         img += doc
-        return bytes(img), stream, fcs
+        # One pass on this fresh encode. It raises the product up to the
+        # register-192 ceiling and leaves the loud samples full scale.
+        # A second apply on that image leaves the bytes unchanged;
+        # image() does not loop it.
+        import musknee
+        baked, info = musknee.apply_image(bytes(img), self.name)
+        return baked, info['stream'], fcs
 
 
 class Freq:
