@@ -2,7 +2,8 @@
 """Build the sound bank: the Doom sound effects, resampled small for DOC
 RAM and coded without loss.
 
-Usage: sndbank.py DOOM1.WAD src/iigs/offsets.inc OUT [MUSIC]
+Usage: sndbank.py DOOM1.WAD src/iigs/offsets.inc OUT [MUSIC] [--law SFXVOL.INC]
+       (OUT - writes no bank: only the tables of --law)
 
 DOC RAM (64 KB) cannot hold the sounds of a level (97-140 KB), and each
 byte of a sound costs DOC RAM and upload time. So the bank has a plan for
@@ -33,6 +34,30 @@ Each sound is cut as small as it can be; some loss of quality is expected:
 The resampler is a Kaiser windowed sinc low pass at 0.46 of the new rate,
 followed by a treble lift for the droop of the DOC, which holds each sample
 flat until the next one (and for the dull sound of the low rates).
+
+Each sample is stored at full scale: its peak is 127 steps from 128. The DOC
+has only 8 bits, and other IIgs software uses all of them. The level of a
+sound is in the volume register of its oscillators. The level of a sound is
+its peak in the bank before this scaling: 1 for the loudest sounds of Doom,
+0.15 for the pick up sound. So the balance of the sounds is the balance of the
+DMX lumps.
+
+SFXVOL.INC holds the two tables of docVolume (src/iigs/s_sound65.s). With
+the volume vol (0-120) and the separation sep (the pan, 254 - sep on the
+left and sep on the right), docVolume makes W = vol * K / 256, where K =
+65536 * level / FULL_DIV is the word of the sound in sfxK. W stops at
+panCap[sep] = 65535 / the larger of sep and 254 - sep. The registers are
+W * (254 - sep) / 256 (left) and W * sep / 256 (right). The larger one is 255
+at most, and the two sides keep their ratio when W stops. FULL_DIV makes the
+register 255 for a close sound of level 1 at the middle (sep 127).
+
+The resampler overshoots at a sharp attack: the treble lift and the low pass
+ring, and some samples reach 1.28 times full scale. limiter() lowers the gain
+smoothly around those samples, so no sample is cut at the bytes 1 and 255.
+A sound can start or end loud (more than a quarter of its peak, and not the
+rise of an attack). The DOC then steps from silence to the first sample, or
+from the last sample to silence, and that is a click. fades() gives such an
+end a fade of 3 ms (popain, brsdth, sawhit, dorcls, pstart).
 
 The samples of a DS lump are coded in blocks of 16. A block starts with
 the byte (order << 4) | width. Each sample x[i] is the prediction of the
@@ -75,6 +100,10 @@ KMIN, KMAX = 6, 16                      # 4386 Hz .. 1645 Hz
 TAIL_DB = 30
 MAXLEN = 4095                           # a 4 KB table with its 0 byte
 FADE = 256
+CEIL = 127.0                            # the largest step from 128
+FADE_MS = 3.0                           # length of the fade at a loud start or end
+FULL_DIV = 59                           # docVolume: 120 * 127 / 59 = 258, limited to 255
+PAN_TOP = 65535                         # W * the larger side of the pan must stay under this
 TABLES = ('HI4', 'LO4', 'S2A', 'S2B', 'S2C', 'S2D',
           'S6A', 'S6BH', 'S6BL', 'S6CH', 'S6CL', 'S6D')
 DIR_OFS = 0xc00
@@ -283,7 +312,7 @@ def bessel_i0(x):
 
 def resample(x, n):
     """The samples x (values 1..255, around 128) as n samples of the same
-    length of time."""
+    length of time, as floats around 0 (not rounded)."""
     step = len(x) / n                   # input samples for each output sample
     fc = 0.46 / step                    # cutoff, cycles for each input sample
     half = 8 / (2 * fc)                 # 8 zero crossings on each side
@@ -310,8 +339,7 @@ def resample(x, n):
             acc += xs[j] * kern[int(abs(c - j) * grid + 0.5)]
         y.append(acc)
     a = 0.12                            # treble lift for the flat steps
-    z = [y[k] + a * (2 * y[k] - y[k - 1 if k else k] - y[k + 1 if k + 1 < n else k]) for k in range(n)]
-    return [min(255, max(1, int(round(v + 128)))) for v in z]
+    return [y[k] + a * (2 * y[k] - y[k - 1 if k else k] - y[k + 1 if k + 1 < n else k]) for k in range(n)]
 
 
 def fft(a):
@@ -358,21 +386,62 @@ def trim(x):
     return x[lo:hi]
 
 
-def limit(x):
-    """x cut to MAXLEN samples, with a linear fade over the last FADE."""
-    if len(x) <= MAXLEN:
-        return x
-    x = x[:MAXLEN]
+def limit(z):
+    """z cut to MAXLEN samples, with a linear fade over the last FADE."""
+    if len(z) <= MAXLEN:
+        return z
+    z = z[:MAXLEN]
     for i in range(FADE):
-        g = (FADE - i) / (FADE + 1)
-        j = MAXLEN - FADE + i
-        x[j] = min(255, max(1, int(round(128 + (x[j] - 128) * g))))
-    return x
+        z[MAXLEN - FADE + i] *= (FADE - i) / (FADE + 1)
+    return z
+
+
+def limiter(z, rate):
+    """z with no sample above CEIL. The gain dips smoothly around each peak,
+    over about 1.2 ms. The old code cut the peak at the byte 1 or 255."""
+    if max(abs(v) for v in z) <= CEIL:
+        return z
+    n = len(z)
+    w = max(2, round(rate * 0.0006))
+    g = [CEIL / abs(v) if abs(v) > CEIL else 1.0 for v in z]
+    m = [min(g[max(0, i - w):i + w + 1]) for i in range(n)]      # so the average keeps each peak under CEIL
+    h = [0.5 + 0.5 * math.cos(math.pi * k / (w + 1)) for k in range(-w, w + 1)]
+    t = sum(h)
+    return [v * sum(h[k + w] * (m[i + k] if 0 <= i + k < n else 1.0) for k in range(-w, w + 1)) / t
+            for i, v in enumerate(z)]
+
+
+def fades(z, rate):
+    """z with a fade (half a Hann window of FADE_MS) at a start or an end that
+    is loud: more than a quarter of the peak. A start that is the first step
+    of a rising attack gets no fade (the pistol starts at -48, then -121)."""
+    n = len(z)
+    peak = max(abs(v) for v in z)
+    f = min(max(4, round(rate * FADE_MS / 1000)), n // 8)
+    z = list(z)
+    ramp = [0.5 - 0.5 * math.cos(math.pi * (i + 1) / (f + 1)) for i in range(f)]
+    if abs(z[0]) > 0.25 * peak and abs(z[0]) >= max(abs(v) for v in z[1:4]):
+        for i in range(f):
+            z[i] *= ramp[i]
+    if max(abs(v) for v in z[-4:]) > 0.25 * peak:
+        for i in range(f):
+            z[n - 1 - i] *= ramp[i]
+    return z
+
+
+def finish(z):
+    """(samples 1..255, level): z (floats around 0, no sample above CEIL) as
+    samples at full scale, and the level of the sound: its peak as a
+    fraction of 127. The sound has the same loudness as before when its
+    volume register is the level times the register of a sound at level 1."""
+    peak = max(abs(v) for v in z)
+    scale = CEIL / peak if peak else 1.0
+    return [min(255, max(1, round(128 + v * scale))) for v in z], min(1.0, round(peak) / 127)
 
 
 def small(x, rate):
     """(samples, rate): x without its silent ends, at the lowest rate SR / k
-    that keeps its band."""
+    that keeps its band, as floats around 0."""
     x = trim(x)
     if not x:
         return x, rate
@@ -397,10 +466,11 @@ def small(x, rate):
                 break
     new = round(SR / k)
     if new < rate:
-        x = resample(x, max(1, round(len(x) * new / rate)))
+        z = resample(x, max(1, round(len(x) * new / rate)))
     else:
         new = rate
-    return limit(x), new
+        z = [float(v - 128) for v in x]
+    return fades(limiter(limit(z), new), new), new
 
 
 def read_wad(path):
@@ -528,9 +598,31 @@ def sfx_names(path):
     return names
 
 
+def write_law(path, names, level):
+    """Write the tables of docVolume (src/iigs/s_sound65.s): sfxK for each
+    sound, panCap for each separation 0-254."""
+    text = ['; Made by tools/sndbank.py: the tables of docVolume. sfxK: one word for each sound in the',
+            f'; order of sfxenum_t, 65536 * level / {FULL_DIV}. panCap: one word for each separation 0 to 254,',
+            f'; {PAN_TOP} / the larger of sep and 254 - sep.',
+            'sfxK:']
+    for name in names:
+        k = round(65536 * level[name] / FULL_DIV) if name in level else round(65536 / FULL_DIV)
+        text.append(f'              .word   {k:<5d}            ; {name}')
+    text.append('panCap:')
+    for sep in range(255):
+        text.append(f'              .word   {PAN_TOP // max(sep, 254 - sep):<4d}             ; sep {sep}')
+    open(path, 'w').write('\n'.join(text) + '\n')
+
+
 def main():
-    wad, header, out = sys.argv[1:4]
-    music = sys.argv[4] if len(sys.argv) > 4 else None
+    args = sys.argv[1:]
+    law_inc = None
+    if '--law' in args:
+        i = args.index('--law')
+        law_inc = args[i + 1]
+        del args[i:i + 2]
+    wad, header, out = args[0:3]
+    music = args[3] if len(args) > 3 else None
     lumps, maps = read_wad(wad)
     names = sfx_names(header)
     num = {name: i for i, name in enumerate(names)}
@@ -543,6 +635,7 @@ def main():
     raw = coded = 0
     size = {}
     samples = {}
+    level = {}
     for i, name in enumerate(names):
         lump = lumps.get('DS' + name.upper())
         if i == 0 or lump is None or name in NEVER:
@@ -551,9 +644,10 @@ def main():
         if fmt != 3 or count > len(lump) - 8 or count <= 48:
             sys.exit(f'DS{name.upper()}: not a DMX sound')
         x = [max(1, b) for b in lump[8 + 16:8 + count - 16]]
-        x, rate = small(x, rate)
-        if not x:
+        z, rate = small(x, rate)
+        if not z:
             continue
+        x, level[name] = finish(z)
         same = samples.get(bytes(x))
         if same is not None:            # the same samples: the same blocks
             struct.pack_into('<IHH', bank, DIR_OFS + 2 + 8 * i,
@@ -612,7 +706,10 @@ def main():
         prev = placed
     row = plan_ofs + 2 * len(names)
     bank[row:row + 2 + len(names)] = bytes([0, DOC_PAGES]) + bytes([255] * len(names))
-    open(out, 'wb').write(bank)
+    if out != '-':
+        open(out, 'wb').write(bank)
+    if law_inc:
+        write_law(law_inc, names, level)
     print(f'{out}: {len(size)} sfx, {raw} samples in {coded} bytes, {len(bank)} bytes')
 
 
