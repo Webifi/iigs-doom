@@ -195,8 +195,15 @@ setLev:       sta     abs:MB_LEVEL,x
               sta     long:SOUNDDATA
               brl     next
 
-;;; 0x6v: halt (silence; the next note restarts the table).
+;;; 0x6v: halt (silence; the next note restarts the table). The volume goes
+;;; to 0 first, as Apple's StopSound does; the note that follows writes its
+;;; level (bit 7 of its level byte).
 cHalt:        tax
+              ora     #REG_VOLUME
+              jsr     abs:docAddress
+              lda     #0
+              sta     long:SOUNDDATA
+              txa
               ora     #REG_CONTROL
               jsr     abs:docAddress
               lda     abs:MB_CTLH,x
@@ -209,7 +216,8 @@ cHalt:        tax
 ;;; from now on; 0x7v p a: the voice's table again (a switch to its loop
 ;;; changed the pointer and size); 0xCv a: the same with the voice's pitch;
 ;;; 0x2v p a: the table as it is; 0xAv a: the pitch too. Bit 7 of a: a halt
-;;; command stopped the voice (no halt); a level as the voice has: no write.
+;;; command stopped the voice (no halt, and its level is written); a level
+;;; as the voice has: no write.
 ;;; MB_CTLH has M1 + halt. The DOC resets at an oscillator service, not at
 ;;; this store: an inline halt/run inside one scan can still miss the reset.
 cNoteC:       sec
@@ -274,11 +282,12 @@ notePitch:    ora     #REG_FREQLO
               lda     abs:MB_PHI,x
               sta     long:SOUNDDATA
 noteLevel:    ldx     abs:MB_V              ; (MB_V + 1 is 0)
-              lda     abs:MB_STREAM,y
               iny
-              and     #0x7f
+              lda     abs:(MB_STREAM-1),y   ; the level; bit 7: a halt command
+              bmi     2$                    ;   stopped the voice at volume 0
               cmp     abs:MB_LEVEL,x
               beq     1$
+2$:           and     #0x7f
               sta     abs:MB_LEVEL,x
               txa
               ora     #REG_VOLUME

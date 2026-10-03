@@ -691,8 +691,10 @@ isPlaying:    lda     abs:.near CHANSFX,x
               lsr     a
               rts
 
-;;; docStop: I_StopSound(X / 2): both oscillators stand.
-docStop:      lda     ##CTL_STOPPED
+;;; docStop: I_StopSound(X / 2): the volume 0 first (docMute), then both
+;;; oscillators stand.
+docStop:      jsr     .kbank docMute
+              lda     ##CTL_STOPPED
               sta     dp:.tiny _Dp
               txa
               clc
@@ -786,7 +788,16 @@ startSound:   lda     .near SS_SFX
 cacheRequested:
               jsr     .kbank cacheSound
               rtl
-              .space  26                    ; preserve the following addresses
+;;; docMute: the volume 0 on both oscillators of the channel at X. X stays.
+docMute:      phx
+              stz     dp:.tiny _Dp
+              txa
+              clc
+              adc     ##DOC_VOLUME
+              jsl     long:IIGS_DocWrite2
+              plx
+              rts
+              .space  9                     ; preserve the following addresses
 soundChosen:  inc     .near USECOUNT        ; the age of its use
               bne     5$
               ldx     ##(2 * CONST_NUMSFX - 2) ; the ages restart
@@ -2257,14 +2268,7 @@ musEvict:     lda     long:(MUSBUF+MB_T1)
 4$:           lda     abs:.near CHANSFX,x
               cmp     long:(MUSBUF+MB_T3)
               bne     5$
-              phx
-              lda     ##CTL_STOPPED         ; (docStop)
-              sta     dp:.tiny _Dp
-              txa
-              clc
-              adc     ##DOC_CONTROL
-              jsl     long:IIGS_DocWrite2
-              plx
+              jsr     .kbank stopOsc        ; (docStop)
 5$:           dex
               dex
               bpl     4$
@@ -2342,6 +2346,15 @@ musHalt:      php
               ldy     ##0
 1$:           tya
               clc
+              adc     #(0x40 + MUS_OSC)     ; the volume 0 first, as StopSound
+              tax                           ;   does
+              lda     #0
+              jsr     .kbank musSet
+              tyx                           ; no level: a note writes its own
+              lda     #0xff                 ;   (the player writes a level only
+              sta     long:(MUSBUF+MB_LEVEL),x ; when it changes)
+              tya
+              clc
               adc     #(0xa0 + MUS_OSC)
               tax
               phx
@@ -2353,6 +2366,25 @@ musHalt:      php
               cpy     ##MUS_VOICES
               bcc     1$
               plp
+              rts
+
+;;; stopOsc: the DOC channel at X (2 * the channel): the volume 0, then both
+;;; oscillators stand (docStop). X stays. 16-bit A, X.
+stopOsc:      phx
+              stz     dp:.tiny _Dp
+              txa
+              clc
+              adc     ##DOC_VOLUME
+              jsl     long:IIGS_DocWrite2
+              plx
+              phx
+              lda     ##CTL_STOPPED
+              sta     dp:.tiny _Dp
+              txa
+              clc
+              adc     ##DOC_CONTROL
+              jsl     long:IIGS_DocWrite2
+              plx
               rts
 
 ;;; musSet: DOC register X = A. 8-bit A, 16-bit X; interrupts off.
@@ -2369,14 +2401,7 @@ musSet:       pha
 
 ;;; musShutdown: I_ShutdownSound: the DOC channels (docStop) and the music.
 musShutdown:  ldx     ##0
-1$:           phx
-              lda     ##CTL_STOPPED
-              sta     dp:.tiny _Dp
-              txa
-              clc
-              adc     ##DOC_CONTROL
-              jsl     long:IIGS_DocWrite2
-              plx
+1$:           jsr     .kbank stopOsc
               inx
               inx
               cpx     ##(2 * NUM_CHANNELS)
