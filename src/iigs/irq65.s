@@ -398,12 +398,15 @@ cWavePage:    lda     abs:MB_STREAM,y
 
 ;;; 0xBF v control: a muted voice's output channel. The next ordinary
 ;;; note still uses its normal channel; no permanent voice-table change.
+;;; The stream's side bit (bit 4: 0 left, 1 right) goes to the DOC as the
+;;; channel: left is the odd channel 1, right the even channel 0 (TN.IIGS.019).
 cRawControl:  lda     abs:MB_STREAM,y
               iny
               ora     #REG_CONTROL
               jsr     abs:docAddress
               lda     abs:MB_STREAM,y
               iny
+              eor     #0x10
               sta     long:SOUNDDATA
               jmp     abs:next
 
