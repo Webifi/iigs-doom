@@ -1,7 +1,10 @@
 /* docrender BANK SONG OUT.wav [SECONDS] [GAIN] [DESCRIPTORS]: a song image of the music
  * bank (tools/musbank.py v5) as the player of src/iigs/irq65.s plays it on
  * MAME 0.289's ES5503 (es5503.cpp): 32 oscillators (26320 Hz), voices on
- * oscillators 16 + v, channel v & 1 (0 left, 1 right), the alarm one-shot
+ * oscillators 16 + v, an even voice on channel 1 (left), an odd one on
+ * channel 0 (right), as a stereo card decodes them (TN.IIGS.019); the
+ * stream's side bit (0 left, 1 right) is the player's to turn into the
+ * channel (bit 4 of the control byte is flipped), the alarm one-shot
  * pass of ceil(130560 / fc) + 1 samples plus 0.8 of wake latency, all
  * register writes of a wake at its sample. Prints the wakes and register
  * writes. Output: 16-bit stereo at 26320 Hz, MAME's level (sum / 8) x GAIN. */
@@ -77,7 +80,7 @@ static void run(Osc *o, float *out, long a, long b)
         uint8_t d = ram[(ramptr + wtptr) & 0xffff];
         if (d == 0) { o->ctl |= 1; break; }
         float sample = (float)((int)d - 128) * o->gv;
-        out[2 * s + ch] += sample;
+        out[2 * s + 1 - ch] += sample; /* channel 1: left, 0: right */
         if (parts && acc_parts) part_e[cur_desc] += (double)sample * (double)sample;
         if (altram >= wtsize) {
             if (mode != 0) { o->ctl |= 1; break; }
@@ -138,7 +141,7 @@ int main(int argc, char **argv)
     uint8_t level[16], vdesc[16] = {0}, vctl[16] = {0}, ctlr[16], ctlh[16];
     memset(level, 0xff, sizeof level);   /* musStart: no level yet */
     for (int v = 0; v < NV; v++) {
-        ctlr[v] = (v & 1) << 4;
+        ctlr[v] = ((v & 1) ^ 1) << 4;
         ctlh[v] = ctlr[v] | 1;
         osc[v].ctl = ctlh[v];
         osc[v].size = 0;
@@ -175,7 +178,7 @@ int main(int argc, char **argv)
             if (c == 0xbf) {
                 v = stream[pos++];
                 if(v>=NV)return 1;
-                osc[v].ctl=stream[pos++];writes++;continue;
+                osc[v].ctl=stream[pos++] ^ 0x10;writes++;continue;
             }
             if (c == 0xbe) {
                 v = stream[pos++];

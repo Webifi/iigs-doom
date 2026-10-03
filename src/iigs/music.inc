@@ -18,7 +18,8 @@ MB_LPTR       .equ    0x03c0          ;   of an attack table: page, size
 MB_LSIZ       .equ    0x0400
 MB_LEVEL      .equ    0x0440          ; 16: the level of each voice
 MB_CTLH       .equ    0x0450          ; 16: channel | 3 (M1 + halt resets phase)
-MB_CTLR       .equ    0x0460          ; 16: its channel (voice & 1)
+MB_CTLR       .equ    0x0460          ; 16: its channel: an even voice (the song's
+                                      ;   left) 1, an odd one (right) 0 (TN.IIGS.019)
 MB_VDESC      .equ    0x0470          ; 16: the descriptor of each voice
 MB_VCTL       .equ    0x0480          ; 16: its run control byte
 MB_SPTR       .equ    0x0490          ; 2: the stream position
