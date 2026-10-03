@@ -4,7 +4,9 @@
 ;;; channels play the sounds of their origins with the volume and stereo
 ;;; separation of the distance and angle to the player (on map 8 without a
 ;;; distance limit). A channel is two DOC oscillators, left and right, that
-;;; play the sound once from DOC RAM. At the start of a map, DOC RAM gets
+;;; play the sound once from DOC RAM: the even one has the left volume and
+;;; DOC channel 1, the odd one the right volume and DOC channel 0 (a stereo
+;;; card: odd left, even right). At the start of a map, DOC RAM gets
 ;;; the plan of the map from the sound bank (tools/sndbank.py): the sounds
 ;;; with the most starts at fixed places below the pool, and the next ones
 ;;; in the pool. A variant that is not in DOC RAM plays its stand-in at
@@ -38,10 +40,12 @@ DOC_CONTROL   .equ    0xa0
 DOC_SIZE      .equ    0xc0
 CTL_HALT      .equ    0x01
 CTL_ONESHOT   .equ    0x02
-CTL_RIGHT     .equ    0x10
-CTL_STOPPED   .equ    ((CTL_ONESHOT | CTL_HALT) | ((CTL_ONESHOT | CTL_RIGHT | CTL_HALT) << 8))
-CTL_PLAY      .equ    (CTL_ONESHOT | ((CTL_ONESHOT | CTL_RIGHT) << 8))
-NORM_SEP      .equ    128
+CTL_LEFT      .equ    0x10            ; DOC channel 1, odd: the left of a stereo card
+                                      ;   (the right oscillator is channel 0, even:
+                                      ;   Apple's rule, TN.IIGS.019)
+CTL_STOPPED   .equ    ((CTL_ONESHOT | CTL_HALT | CTL_LEFT) | ((CTL_ONESHOT | CTL_HALT) << 8))
+CTL_PLAY      .equ    ((CTL_ONESHOT | CTL_LEFT) | (CTL_ONESHOT << 8))
+NORM_SEP      .equ    127             ; the middle of the 254 of the pan law: equal sides
 S_STEREO_SWING .equ   96
 S_CLIPPING_HI .equ    1200            ; S_CLIPPING_DIST = 1200 << FRACBITS
 S_CLOSE_HI    .equ    160             ; S_CLOSE_DIST
@@ -549,7 +553,8 @@ adjustParams: lda     .near (PL+OFS_PL_MO)  ; no listener: no
               lsr     a
               lsr     a
               lsr     a
-              ;; sep = 128 - ((S_STEREO_SWING * finesineapprox(angle)) >> 16)
+              ;; sep = NORM_SEP - ((S_STEREO_SWING * finesineapprox(angle)) >> 16)
+              ;; (Doom has 128; 127 gives equal sides at sep NORM_SEP)
               jsl     long:finesineapprox
               sta     dp:.tiny _Dp
               stx     dp:.tiny (_Dp+2)
@@ -1502,9 +1507,10 @@ I_InitSound2: php
               dex
               bpl     1$
               ldx     ##15                  ; free run; voices alternate between
-2$:           txa                           ;   channels 0 and 1 (left and right
-              and     #1                    ;   of a stereo card)
-              asl     a
+2$:           txa                           ;   channels 1 and 0: an even voice
+              inc     a                     ;   (the song's left) is channel 1, an
+              and     #1                    ;   odd one channel 0 (the right of a
+              asl     a                     ;   stereo card, TN.IIGS.019)
               asl     a
               asl     a
               asl     a
