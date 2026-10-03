@@ -27,7 +27,7 @@
 ;;; Bank E1    super hi-res screen
 
 (define memories
-  '((memory DirectPage (address (#x000900 . #x0009ff))
+  '((memory DirectPage (address (#x000900 . #x0009fe)) ; $0009ff: DOCVOL (src/iigs/i_doc65.s)
             (section registers ztiny))
     (memory Stack (address (#x000b00 . #x003fff))
             (section stack))
