@@ -2443,9 +2443,10 @@ bmPasses:     sta     dp:.tiny (_Dp+2)      ; the count of a pass
 SOUNDCTL      .equ    0xe0c03c
 SOUNDDATA     .equ    0xe0c03d
 SOUNDADRL     .equ    0xe0c03e
+DOCVOL        .equ    0xff            ; the volume for SOUNDCTL: $09FF of the direct page
 bmRamp:       lda     long:SOUNDCTL
               bmi     bmRamp
-              and     #0x0f
+              lda     dp:DOCVOL
               sta     long:SOUNDCTL
               lda     #(0x60 + 31)          ; (TIMER_OSC)
               sta     long:SOUNDADRL

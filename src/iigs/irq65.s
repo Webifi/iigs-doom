@@ -37,6 +37,7 @@ SOUNDCTL      .equ    0xe0c03c        ; the sound GLU: bit 7 busy, bit 6 DOC
 GLU_RAM       .equ    0x40            ;   RAM (else the registers)
 SOUNDDATA     .equ    0xe0c03d
 SOUNDADRL     .equ    0xe0c03e
+DOCVOL        .equ    0x0009ff        ; the volume for SOUNDCTL, bits 3-0 (i_doc65.s)
 DOC_IRQ       .equ    0xe0            ; the DOC interrupt register
 ALARM_FREQLO  .equ    0x00 + 30       ; the registers of the alarm
 ALARM_FREQHI  .equ    0x20 + 30
@@ -87,9 +88,8 @@ ackAlarm:     lda     #DOC_IRQ
 adbByte:      pla
               jsl     long:IIGS_PollKeys
 noEntry:      rti                           ; (also BRK, COP, ABORT and NMI)
-ramMode:      and     #0x0f                 ; register mode (the volume bits
-              sta     long:SOUNDCTL         ;   as the main code keeps them)
-              bra     ackAlarm
+ramMode:      brl     irqRegMode            ; register mode (irqcold)
+              .space  5                     ;   (the code after it keeps its address)
 
 ;;; ---------------------------------------------------------------------------
 ;;; A music wake (the stream of tools/musbank.py): its wait sets the alarm
@@ -344,6 +344,12 @@ docWaitFrequency:
               sta     long:SOUNDDATA
               sta     abs:MB_FCHI           ; musResume restarts with it
 3$:           rts
+;;; The interrupt found the GLU in RAM mode (an upload of the main code):
+;;; registers again, with the volume of the system and not the volume bits
+;;; that the register shows. Then the acknowledge.
+irqRegMode:   lda     long:DOCVOL
+              sta     long:SOUNDCTL
+              brl     ackAlarm
 ;;; ---------------------------------------------------------------------------
 ;;; The rare commands, in the cache slots $5C00-$5CFF (src/iigs/iigs.scm):
 ;;; the pitch changes, the loop of an attack table, the end of a song.

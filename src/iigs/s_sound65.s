@@ -25,7 +25,7 @@
               .extern R_PointToAngle3, finesineapprox, IIGS_MulLo16
               .extern _Mul32, _Div16, _Div32, _UDivMod32, MA, MB, MR, umul16
               .extern IIGS_DocWrite2, IIGS_DocRead, IIGS_DocUpload, IIGS_DecodeSound
-              .extern IIGS_CopyHuge, IIGS_AlarmOff
+              .extern IIGS_CopyHuge, IIGS_AlarmOff, IIGS_InitDocVolume
               .extern I_Error, printf
 
 PL            .equ    _g_player
@@ -1517,6 +1517,8 @@ SOUNDCTL_M    .equ    0xe0c03c
 SOUNDDATA_M   .equ    0xe0c03d
 SOUNDADRL_M   .equ    0xe0c03e
 SOUNDADRH_M   .equ    0xe0c03f
+DOCVOL        .equ    0xff            ; the volume for SOUNDCTL, bits 3-0: $09FF
+                                      ;   of the direct page (src/iigs/i_doc65.s)
 MUS_SONGS     .equ    13
 MUS_OSC       .equ    16              ; voice v: oscillator 16 + v
 MUS_POOL      .equ    64              ; the pool of the sound effects under a song
@@ -2217,7 +2219,7 @@ musUpload:    lda     long:(MUSBUF+MB_T1)
               sep     #0x20
 2$:           lda     long:SOUNDCTL_M
               bmi     2$
-              and     #0x0f
+              lda     dp:DOCVOL
               ora     #0x60                 ; DOC RAM, auto increment
               sta     long:SOUNDCTL_M
               lda     #0
@@ -2230,8 +2232,9 @@ musUpload:    lda     long:(MUSBUF+MB_T1)
               iny
               cpy     ##256
               bne     3$
-              lda     long:SOUNDCTL_M       ; registers again
-              and     #0x0f
+5$:           lda     long:SOUNDCTL_M       ; registers again, when the GLU is free
+              bmi     5$
+              lda     dp:DOCVOL
               sta     long:SOUNDCTL_M
               lda     long:(MUSBUF+MB_V)
               inc     a
@@ -2391,7 +2394,7 @@ stopOsc:      phx
 musSet:       pha
 1$:           lda     long:SOUNDCTL_M
               bmi     1$
-              and     #0x0f                 ; registers, no auto increment
+              lda     dp:DOCVOL             ; registers, no auto increment
               sta     long:SOUNDCTL_M
               txa
               sta     long:SOUNDADRL_M
@@ -2400,7 +2403,10 @@ musSet:       pha
               rts
 
 ;;; musShutdown: I_ShutdownSound: the DOC channels (docStop) and the music.
-musShutdown:  ldx     ##0
+;;; The volume of the control register first: an I_Error can come before
+;;; IIGS_InitDocTimer.
+musShutdown:  jsl     long:IIGS_InitDocVolume
+              ldx     ##0
 1$:           jsr     .kbank stopOsc
               inx
               inx
