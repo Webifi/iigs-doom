@@ -15,7 +15,7 @@
 #include "tics.inc"
 
               .extern _Dp, D_DoomMain, D_PostEvent
-              .extern IIGS_StartKeys, IIGS_StopKeys, IIGS_ResetSystem, IIGS_StopInterrupts
+              .extern IIGS_SelectKeyboard, IIGS_StopKeys, IIGS_ResetSystem, IIGS_StopInterrupts
               .extern bmAccelOff, bmAccelBack
               .extern iigs_adbq, iigs_adbqhead, iigs_adbqtail
 #if TICSTEP > 1
@@ -113,6 +113,7 @@ textRowOffset: .word  0x000, 0x080, 0x100, 0x180, 0x200, 0x280, 0x300, 0x380
 KEYDEF        .macro  key, char
               .word   (\char << 8) | \key
               .endm
+              .public keyDefaults
 keyDefaults:
               KEYDEF  KEY_STRAFELEFT, 'a'     ; $00 A
               KEYDEF  KEY_DOWN, 's'           ; $01 S
@@ -698,7 +699,7 @@ I_InitKeyboard:
               dex
               bpl     2$
               stz     .near iigs_bindwait
-              jsl     long:IIGS_StartKeys
+              jsl     long:IIGS_SelectKeyboard
               rtl
 
 ;;; I_StartTic: the key events of the key bytes in iigs_adbq. An ADB key is

@@ -12,6 +12,7 @@
 #include "wpage.inc"
 
               .extern _Dp, printf, FixedApproxDiv, IIGS_MulLo16
+              .public keyboardTicCall, keyboardBuildCall
               .extern W_NextDemo
               .extern I_GetTime, I_TimeWait, I_StartTic, I_InitKeyboard, IIGS_InitDocTimer, I_InitSound
 #if TICSTEP > 1
@@ -215,7 +216,8 @@ print:        stx     dp:.tiny _Dp
 doomLoop:     PHASE   1
               lda     .near singletics
               beq     2$
-              jsl     long:I_StartTic
+keyboardTicCall .equ 91$
+91$:          jsl     long:I_StartTic
               jsl     long:G_BuildTiccmd
 #if TICSTEP > 1
               lda     ##1
@@ -358,9 +360,11 @@ buildNewTiccmds:
 #if TICSTEP > 1
               lda     .near NT_TIC          ; the keys up to its tic
               inc     .near NT_TIC
-              jsl     long:I_StartTicUntil
+keyboardBuildCall .equ 92$
+92$:          jsl     long:I_StartTicUntil
 #else
-              jsl     long:I_StartTic
+keyboardBuildCall .equ 92$
+92$:          jsl     long:I_StartTic
 #endif
               jsl     long:G_BuildTiccmd
               inc     .near maketic

@@ -71,6 +71,8 @@ irqOn:        .space  2               ; not 0: the interrupt runs
               .section irqcode, text
 irqEntry:     sep     #0x20
               pha
+              .public J13StatusSite
+J13StatusSite:
               lda     long:KMSTATUS
               and     #KM_WAITING
               bne     adbByte
@@ -83,12 +85,16 @@ ackAlarm:     lda     #DOC_IRQ
               lda     long:SOUNDDATA        ; the acknowledge
               lda     long:musOn            ; the music stopped: no new alarm
               bne     wake
-              pla
+              .public J13SilentExit, J13SilentTrampoline
+J13SilentExit: pla
               rti
 adbByte:      pla
               jsl     long:IIGS_PollKeys
 noEntry:      rti                           ; (also BRK, COP, ABORT and NMI)
 ramMode:      brl     irqRegMode            ; register mode (irqcold)
+              .public J13SilentBranchWord
+J13SilentBranchWord .equ 0x80 + (J13SilentTrampoline-J13SilentExit-2)*256
+J13SilentTrampoline:
               .space  5                     ;   (the code after it keeps its address)
 
 ;;; ---------------------------------------------------------------------------
@@ -130,7 +136,8 @@ wake:         xba
               lda     #ALARM_CONTROL        ; a halted one-shot counts again
               sta     long:SOUNDADRL
               lda     #ALARM_CTL
-              sta     long:SOUNDDATA
+              .public J13AlarmSite
+J13AlarmSite: sta     long:SOUNDDATA
 next:         lda     abs:MB_STREAM,y
               cmp     #0xd0
               bcs     done

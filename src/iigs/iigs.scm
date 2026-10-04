@@ -158,7 +158,7 @@
             (section guardcode))
     ;; The ENDOOM page of the exit (tools/endtext.py) first: read once.
     (memory Code4d2 (address (#x046e00 . #x0488ff))
-            (section (endtext #x046e00) farcode cfar far))
+            (section (endtext #x046e00) (stealthcode #x047500) farcode cfar far))
     (memory Code4e (address (#x048900 . #x049fff))
             (section coldcode))
     (memory Code4f (address (#x04a000 . #x04bdff))

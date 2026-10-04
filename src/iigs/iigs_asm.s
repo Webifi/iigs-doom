@@ -42,6 +42,8 @@ iigs_adbqtail: .space 2                 ; the next byte out (I_StartTic)
               .public iigs_adbt
 iigs_adbt:    .space  (2 * ADBQ_SIZE)   ; the tic (I_GetTime) of each byte
 #endif
+              .public adbHalt, mouseUp
+              .public adbTalk
 adbTalk:      .space  2                 ; 1: a Talk is out
 adbHalt:      .space  2                 ; 1: no more Talks (IIGS_StopKeys)
 adbByte:      .space  2                 ; the last byte from the ADB
