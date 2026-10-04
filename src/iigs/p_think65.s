@@ -1,8 +1,9 @@
-;;; The thinker list in 65816 assembly.
+;;; Thinker list ownership and game-tic dispatch.
 ;;;
-;;; P_InitThinkers, P_AddThinker, P_RemoveThinker, P_RemoveThing and their
-;;; delayed removers, P_NextThinker and P_Ticker of p_tick.c, with
-;;; the same results. P_RunThinkers is in src/iigs/p_tick65.s.
+;;; P_InitThinkers creates the circular sentinel list; P_AddThinker appends
+;;; an entry. Removal replaces its action with a delayed remover, allowing
+;;; P_RunThinkers (p_tick65.s) to unlink/free it at the appropriate turn.
+;;; P_Ticker coordinates player, thinker and special updates.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

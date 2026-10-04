@@ -1,9 +1,10 @@
-;;; Spawning and removing mobjs in 65816 assembly.
+;;; Actor allocation, spawning, removal and respawn.
 ;;;
-;;; P_SpawnMobj, P_RemoveMobj, P_SpawnPuff, P_SpawnBlood, P_SpawnMissile,
-;;; P_SpawnPlayerMissile, P_SpawnMapThing (with P_SpawnPlayer) and
-;;; P_NightmareRespawn of p_mobj.c with the same results. A new
-;;; missile stays on the stack over P_TryMove, which runs game logic.
+;;; P_SpawnMobj initializes an actor; the remaining entry points create map
+;;; things, players, missiles and impact effects. P_RemoveMobj detaches an
+;;; actor from world structures and schedules its removal.
+;;; A new missile pointer stays on the stack across P_TryMove: collision
+;;; handling can re-enter game logic and overwrite ordinary scratch.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -36,7 +37,7 @@ MTF_EASY      .equ    1               ; the skill flags of a map thing
 MTF_NORMAL    .equ    2
 MTF_HARD      .equ    4
 MTF_AMBUSH    .equ    8
-OFS_MT_X      .equ    0               ; mapthing_t, doomdata.h
+OFS_MT_X      .equ    0               ; packed map-thing record, from the THINGS lump
 OFS_MT_Y      .equ    2
 OFS_MT_TYPE   .equ    4
 OFS_MT_ANGLE  .equ    6               ; int8_t, 45 degree units
@@ -1248,7 +1249,7 @@ fog:          lda     ##CONST_MT_TFOG
 ;;; ---------------------------------------------------------------------------
 ;;; The pool of mobjs (_g_thingPool, one for each map thing): TP_BITS has a
 ;;; bit for each, 1 when it is free, so poolTake reads a word for 16 mobjs
-;;; (the C code walks the types). No word above TP_HW has a free one. The
+;;; No word above TP_HW contains a free slot. The
 ;;; pool has at most TP_MAX mobjs. These run in the game tic (logiccode,
 ;;; small fragments).
 ;;; ---------------------------------------------------------------------------

@@ -1,17 +1,14 @@
-;;; Thinkers in 65816 assembly.
+;;; Run thinker actions and actor state transitions.
 ;;;
-;;; P_RunThinkers of p_tick.c and P_MobjThinker,
-;;; P_MobjBrainlessThinker and P_SetMobjState of p_mobj.c, with
-;;; the same results. The C code spends most of its time on 32-bit
-;;; pointer loads and on the runtime call of function pointers.
+;;; P_RunThinkers walks the list owned by p_think65.s. P_MobjThinker applies
+;;; movement and state timing; P_SetMobjState follows state transitions and
+;;; invokes their action functions. Those calls may remove or spawn actors.
+;;; The iterator must preserve its next-entry and actor state across them.
 ;;;
-;;; These routines run during game tics only, never while a column is
-;;; drawn, so they use direct page pointers of the column drawers
-;;; (tools/gendraw.py) for their [dp],y addressing.
-;;;
-;;; The walk of the thinkers and the state changes store bytes: a 16-bit
-;;; store is two writes back to back, and the accelerator buffers one
-;;; write.
+;;; These routines run during game tics, before renderer production/replay.
+;;; They reuse the DC_* drawer scratch for indirect addressing; that storage
+;;; cannot retain renderer values across a tic. Hot stores are split where
+;;; intervening work can overlap a buffered byte write.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

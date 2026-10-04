@@ -1,11 +1,13 @@
-;;; Render data in 65816 assembly.
+;;; Renderer assets: textures, sprite frames, colormaps and column storage.
 ;;;
-;;; r_data.c (the textures), r_sky.c (the sky), r_plane.c (the
-;;; nukage frame), v_video.c (patches by lump number), r_things.c (the
-;;; sprite frames) and the rest of the code of r_draw.c (the texture
-;;; columns, the colormaps, the sprite scale tables, R_PointOnSegSide) with
-;;; the same results. The lumps are in place in the WAD image, so the calls
-;;; of Z_ChangeTagToCache for them (which do nothing) are gone.
+;;; Initialization resolves WAD lumps and constructs the renderer's lookup
+;;; tables. R_MakeTextureColumns assembles the vertical texel data consumed
+;;; by r_seg65.s; R_MakeLevelColumns manages its allocation within the loaded
+;;; level window. W_NEXTBANK describes that window, which can be noncontiguous.
+;;; Column allocations reserve OVERREAD bytes before a bank end so indexed
+;;; texel reads cannot silently enter another bank.
+;;; WAD lumps are used in place; their lifetime follows the resident image or
+;;; loaded level set, not a zone-cache allocation.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

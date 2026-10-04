@@ -1,14 +1,12 @@
-;;; The zone memory in 65816 assembly.
+;;; Bank-bounded zone allocator.
 ;;;
-;;; z_zone.c (its IIgs code) with the same results. The zone is
-;;; the banks ZONE_FIRST_BANK to ZONE_LAST_BANK: a double linked list of
-;;; blocks in address order, closed by a sentinel. A block starts with a
-;;; 16-byte header; next and prev are segments (the address >> 4). A static
-;;; block at the top of each bank but the last keeps each block in one
-;;; bank. The search for a free block starts at the rover and frees the
-;;; purgable blocks (PU_CACHE) on its way. A pointer to a lump (used in
-;;; place, in a bank after the zone) is not a block: Z_Free and
-;;; Z_ChangeTagToCache ignore it.
+;;; ZONE_FIRST_BANK..ZONE_LAST_BANK form a doubly linked list of blocks in
+;;; address order, closed by a sentinel. Each block has a 16-byte header;
+;;; next/prev encode addresses divided by 16. Reserved blocks at bank ends
+;;; prevent an allocation from crossing a bank boundary.
+;;; Allocation searches from rover and reclaims PU_CACHE blocks encountered
+;;; on the way. WAD lump pointers refer outside the zone; Z_Free and
+;;; Z_ChangeTagToCache ignore those pointers.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

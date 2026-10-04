@@ -1,11 +1,15 @@
 ;;; Sprite projection in 65816 assembly.
 ;;;
-;;; R_AddSprites and R_ProjectSprite of r_draw.c, with the same
-;;; results. PROJECTION / (tz >> FRACBITS) and (PROJECTIONY * FRACUNIT) /
-;;; (tz >> FRACBITS) come from tables that R_InitSpriteScales makes with
-;;; the same C expressions, for tz >> FRACBITS = 4..1280.
-;;; Z_ChangeTagToCache is left out: sprite patches are lumps in the WAD
-;;; image, which it ignores. The thing, its frame and its patch are long
+;;; R_AddSprites visits a sector's objects during the BSP walk and
+;;; R_ProjectSprite turns each visible object into a vissprite_t entry.
+;;; No patch pixels are drawn here: r_frame65.s sorts the entries and
+;;; r_sprite65.s clips them against walls before their posts are emitted.
+;;; tz is forward depth, tx horizontal camera-space position; xscale and
+;;; yscale convert the patch's texel dimensions to screen columns/rows.
+;;; PROJECTION / (tz >> FRACBITS) and (PROJECTIONY * FRACUNIT) /
+;;; (tz >> FRACBITS) are precomputed by R_InitSpriteScales for whole-unit
+;;; depths 4..1280. Sprite patches are read in place from the resident WAD
+;;; image. The thing, its frame and its patch are long
 ;;; pointers in the direct page of the BSP phase (BSPDP of
 ;;; src/iigs/r_sprite65.s). Hot paths split stores where register work can
 ;;; overlap the accelerator's buffered byte write; adjacent scratch fields
@@ -43,7 +47,7 @@ GG_PADN       .equ    16              ; the pad after gGX: the old size of tzAny
 PS_PADN       .equ    35              ; the pad after bitOf: R_PointToAngle16 and the
                                       ;   rest of bspcode keep their addresses
 WAD_BANK      .equ    MM_WAD_BANK     ; WAD_ADDR = 0x100000
-FILELUMP_SIZE .equ    16              ; filelump_t of w_wad.c, filepos first
+FILELUMP_SIZE .equ    16              ; WAD directory entry; file position is first
 
 SC            .equ    (_Dp+4)         ; the sector of R_AddSprites (bspSub of
                                       ;   src/iigs/r_bsp65.s)

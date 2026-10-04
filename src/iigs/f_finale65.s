@@ -1,9 +1,8 @@
-;;; The finale in 65816 assembly.
+;;; Episode-one finale state and drawing.
 ;;;
-;;; f_finale.c and f_lib.c with the same results: the end text of
-;;; episode 1 comes out letter by letter over a tiled flat (faster with
-;;; fire or use), then the HELP2 picture shows. The music call (a stub) is
-;;; gone.
+;;; Reveal the ending text over a tiled flat, allowing fire/use to accelerate
+;;; it, then display HELP2. This module owns the finale's tick count and
+;;; screen transitions; the game-state dispatcher calls its ticker/drawer.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

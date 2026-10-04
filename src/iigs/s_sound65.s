@@ -1,18 +1,17 @@
-;;; Sound effects in 65816 assembly.
+;;; Sound-effect channels, DOC sample residency and music loading.
 ;;;
-;;; The sound code of Doom (s_sound.c) for the Ensoniq DOC. The 8
-;;; channels play the sounds of their origins with the volume and stereo
-;;; separation of the distance and angle to the player (on map 8 without a
-;;; distance limit). A channel is two DOC oscillators, left and right, that
-;;; play the sound once from DOC RAM: the even one has the left volume and
-;;; DOC channel 1, the odd one the right volume and DOC channel 0 (a stereo
-;;; card: odd left, even right). At the start of a map, DOC RAM gets
-;;; the plan of the map from the sound bank (tools/sndbank.py): the sounds
-;;; with the most starts at fixed places below the pool, and the next ones
-;;; in the pool. A variant that is not in DOC RAM plays its stand-in at
-;;; another pitch. The pool holds the recently used sounds: a new one goes
-;;; where the newest sound to remove is the oldest, and sounds that play
-;;; stay. nosfxparm is always false. The music is at the end of this file.
+;;; Eight effect channels track an origin, sound id and pickup flag. Each
+;;; uses two DOC oscillators for left/right volume; distance and view angle
+;;; set attenuation and pan. Map 8 retains sound beyond the usual distance
+;;; cutoff. Replacing or stopping a channel releases its sample's busy count.
+;;;
+;;; tools/sndbank.py supplies a per-map DOC RAM plan: fixed samples below
+;;; POOL_LO, replaceable samples in [POOL_LO, POOL_HI). PAGEOWNER describes
+;;; occupied pages and SND_PAGE resolves a sound's start page. The eviction
+;;; search ranks candidate ranges by sample age, including second-reference
+;;; weighting when music reduces the pool; SND_BUSY protects playing samples.
+;;; Missing variants can use a resident stand-in at an adjusted frequency.
+;;; Music-loading code below prepares MUSBUF for the player in irq65.s.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -50,7 +49,7 @@ S_STEREO_SWING .equ   96
 S_CLIPPING_HI .equ    1200            ; S_CLIPPING_DIST = 1200 << FRACBITS
 S_CLOSE_HI    .equ    160             ; S_CLOSE_DIST
 S_ATTENUATOR  .equ    (S_CLIPPING_HI - S_CLOSE_HI)
-PICKUP_SOUND  .equ    0x8000          ; s_sound.h
+PICKUP_SOUND  .equ    0x8000          ; bit 15 of sound id: pickup channel
 SNDBANK_ADDR  .equ    MM_SNDBANK      ; see src/iigs/iigs.scm
 SNDDIR_OFS    .equ    0x0c00
 PLAN_OFS      .equ    (SNDDIR_OFS + 2 + 8 * CONST_NUMSFX) ; stand-ins, pitches, plans
@@ -63,7 +62,8 @@ SNDPCM_ADDR   .equ    MM_SNDPCM
 SNDPCM_END    .equ    MM_SNDPCM_END   ; VIEWSAVE of src/iigs/i_viigs65.s above
 
               .section zfar, bss
-;;; the sounds (sound_t of i_aiigs.c): 2 bytes each, the samples 4
+;;; Per-sound arrays, indexed by sound id: word entries except SND_PCM,
+;;; whose entries are four-byte pointers into decoded sample RAM.
 SND_PCM:      .space  (4 * CONST_NUMSFX) ; the samples in main RAM, 0: none
 SND_LEN:      .space  (2 * CONST_NUMSFX)
 SND_FREQ:     .space  (2 * CONST_NUMSFX) ; the frequency register for 256 bytes
@@ -674,7 +674,7 @@ absDelta:     lda     [.tiny _Dp],y
               rts
 
 ;;; ---------------------------------------------------------------------------
-;;; The DOC channels (i_aiigs.c)
+;;; DOC channel allocation, playback and sample-cache management.
 ;;; ---------------------------------------------------------------------------
 
 ;;; isPlaying: I_SoundIsPlaying(X / 2): carry set if the DOC channel has a
@@ -1298,9 +1298,9 @@ I_InitSound:  lda     long:(SNDBANK_ADDR+SNDDIR_OFS) ; the number of sounds
               sta     .near PLAN_MAP
               rtl
 
-;;; The priority of each sound (sfxenum_t order, S_sfx of sounds.c), 0-127,
-;;; a low number first: with all channels busy, a new sound stops a sound
-;;; with the same or a higher number. The length field of S_sfx is not used.
+;;; Sound priorities in sound-id order, 0-127; smaller values win.
+;;; When all channels are busy, a new sound can replace a playing sound
+;;; with the same or a larger priority number.
               .section cnear, rodata
 sfxPriority:  .byte   0, 64, 64, 64, 64, 118, 64, 64      ; none pistol shotgn sgcock sawup sawidl sawful sawhit
               .byte   64, 70, 70, 70, 100, 100, 100, 100  ; rlaunc rxplod firsht firxpl pstart pstop doropn dorcls
@@ -1331,13 +1331,11 @@ snd_MusicVolume: .word 12             ; leave headroom for the sound effects
 ;;; Music (tools/musbank.py; the player is the game interrupt of
 ;;; src/iigs/irq65.s; the layout of MUSBUF is src/iigs/music.inc). Songs are
 ;;; numbered as in the bank: 0-8 E1M1-E1M9, 9 INTER, 10 INTRO, 11 VICTOR,
-;;; 12 INTROA. No song plays at music volume 0: then no alarm runs.
+;;; 12 INTROA. Music volume 0 stops song playback and its music wakes.
 ;;; ---------------------------------------------------------------------------
-;;; The player's code was 1124 bytes of coldcode: its tables and the same
-;;; space stay there, so no code of the game moves (a move changes the
-;;; cache slots of hot code: +0.05% in the demos; a section that nothing
-;;; uses would go out of the link); the music code runs at a track change
-;;; only, in bank 0 $9000 up (src/iigs/iigs.scm).
+;;; Keep these tables and the reserved coldcode footprint together: changing
+;;; the section size shifts later code into different accelerator cache slots.
+;;; Track-change code executes in bank 0 at $9000 and above (iigs.scm).
               .section coldcode, text
 ;;; The attenuation (1/8 octave) of music volume 0-15: DMX limits each
 ;;; channel to 8 x the volume (tools/musbank.py music_atten); 255: off.
@@ -1354,7 +1352,7 @@ alarmHi:      .byte   0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .byte   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .byte   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .byte   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-;;; The song of each music of Doom (sounds.h order): E1M1-E1M9, the other
+;;; Song selection by music id: E1M1-E1M9, the other
 ;;; episodes none, then inter, intro, bunny (none), victor, introa.
 musOfDoom:    .byte   255, 0, 1, 2, 3, 4, 5, 6, 7, 8
               .byte   255, 255, 255, 255, 255, 255, 255, 255, 255
@@ -1364,7 +1362,7 @@ musOfDoom:    .byte   255, 0, 1, 2, 3, 4, 5, 6, 7, 8
               ;; Rechecking every page repeats the same busy/age reads and
               ;; stack traffic. Inspect it once, then advance to its end.
               ;; The interval can exceed SS_END: the loop bound handles that.
-              ;; Original choice order, minimum age and tie-breaking stay exact.
+              ;; Candidate order determines which range wins an equal-age tie.
 cacheWalk:    cpx     .near SS_END
               bcc     1$
               jmp     long:cacheChoice
@@ -1919,7 +1917,7 @@ musSource:    lda     dp:.tiny _Dp
 ;;; plays mus_intro once (W_NextDemo returns 0); musInter, musFinale: the
 ;;; intermission and the finale loop mus_inter, mus_victor, then WI_Start or
 ;;; F_StartFinale with their argument (_Dp[0-3]) as it came.
-MUS_INTER     .equ    28              ; sounds.h
+MUS_INTER     .equ    28              ; intermission music id
 MUS_INTRO     .equ    29
 MUS_VICTOR    .equ    31
 musTitle:     lda     ##MUS_INTRO
@@ -2025,7 +2023,7 @@ musPart:      lda     long:(MUSBUF+MB_HLEN)
               rts
 
 ;;; musLoad (the level loader: at the end of W_LoadSet of a map, and in the
-;;; title's loading screen): the song unit of music A (sounds.h: mus_e1m1 =
+;;; title's loading screen): the song unit for music id A (mus_e1m1 =
 ;;; 1, mus_inter = 28, mus_intro = 29) at Y:X (the image tools/music/mussc.py
 ;;; writes: head, DOC part) into MUSBUF and DOC RAM before it returns (the
 ;;; loader reuses that RAM); it starts at S_ChangeMusic of that music (at
@@ -2432,4 +2430,3 @@ musResume:    php
               jsr     .kbank musAlarm
 9$:           plp
               rtl
-

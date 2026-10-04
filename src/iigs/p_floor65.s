@@ -1,8 +1,8 @@
-;;; Moving floors and ceilings in 65816 assembly.
+;;; Floor/ceiling movement and floor line specials.
 ;;;
-;;; p_floor.c with the same results: the plane movers with the
-;;; checks of the things in the sector, the floor thinker, and the floor,
-;;; stair and donut line specials.
+;;; T_MovePlane moves a sector plane and checks affected actors; callers use
+;;; its result to handle obstruction, crushing or arrival at the target.
+;;; Floor thinkers and floor, stair and donut specials build on that operation.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

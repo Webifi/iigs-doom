@@ -73,10 +73,10 @@ VW_SGD        .equ    (MM_BV + 0xb962) ; the offset of the next column's data
 VW_SGC        .equ    (MM_BV + 0xb964) ; the next column
 VW_SGT        .equ    (MM_BV + 0xb96c) ; scratch
 VW_SGCOL      .equ    (MM_BV + 0xb970) ; 8 bytes: a column of a glyph
-VW_BTXT       .equ    (MM_BV + 0xb860) ; the text of the result (to $4EB95F)
+VW_BTXT       .equ    (MM_BV + 0xb860) ; result text, through MM_BV + $B95F
 
 ;;; The menu state, scratch and original screen colors.
-UI_PALON      .equ    (MM_BV + 0xbb56) ; $4EB852 is VW_SGON.
+UI_PALON      .equ    (MM_BV + 0xbb56) ; separate from VW_SGON at MM_BV + $B852
 UI_EDGE       .equ    (MM_BV + 0xb854)
 UI_ITEM       .equ    (MM_BV + 0xb856)
 UI_LEFT       .equ    (MM_BV + 0xb858)

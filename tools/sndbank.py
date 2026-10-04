@@ -115,7 +115,7 @@ MAPS = 9
 MAP_ORDER = (1, 2, 3, 9, 4, 5, 6, 7, 8) # E1M9 comes from E1M3 and goes to E1M4
 MTF_MULTI = 16                          # a thing of multiplayer games only
 
-# Sounds that no code starts (A_PlayerScream of Doom8088 uses only pldeth).
+# Sounds unused by the game; A_PlayerScream starts only pldeth.
 NEVER = {'rxplod', 'pdiehi', 'tink'}
 
 # The game picks a variant at random (posit1 + P_Random() % 3 and so on);
@@ -177,7 +177,7 @@ WEAPON_SOUNDS = {
     2005: ('sawup', 'sawidl', 'sawful', 'sawhit'),
 }
 
-# The sounds of the line specials of Doom8088 (P_CrossSpecialLine,
+# Sounds triggered by line specials (P_CrossSpecialLine,
 # P_UseSpecialLine, P_ShootSpecialLine; the moving floors play stnmov and
 # pstop, the lifts pstart and pstop, a switch swtchn).
 LINE_SOUNDS = (

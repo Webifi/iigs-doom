@@ -1,10 +1,10 @@
-;;; The thing and state tables in 65816 assembly.
+;;; Sprite names, animation states and actor-type definitions.
 ;;;
-;;; The tables of info.c (the shareware things): the 4-letter names
-;;; of the sprites, the states of the animations (sprite, frame, tics, action,
-;;; next state) and the thing types. The names come from offsets.inc. A state
-;;; takes 16 bytes and a thing type 64 bytes (src/iigs/info.inc), so the
-;;; address of a record is its number shifted.
+;;; Each state records sprite, frame, duration in tics, action pointer and
+;;; next-state index. A state is 16 bytes; an actor type is 64 bytes
+;;; (info.inc), allowing an index to become a byte offset by shifting.
+;;; Keep the sprite-name and state/type tables in the order of their
+;;; numeric identifiers in offsets.inc.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

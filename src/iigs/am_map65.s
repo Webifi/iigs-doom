@@ -1,15 +1,13 @@
 ;;; The automap in 65816 assembly.
 ;;;
-;;; am_map.c, and V_DrawLine and V_ClearViewWindow of
-;;; i_viigs.c, with the same results: the lines that the player saw
-;;; (with the computer map also the others) in the colors of their kind, and
-;;; the player arrow; zoom, pan, follow mode, and the overlay mode that turns
-;;; the map with the player.
+;;; Draw discovered lines (plus undiscovered lines with the computer map)
+;;; and the player arrow. Zoom, pan and follow update the map transform;
+;;; the rotating overlay uses the player's facing angle.
 ;;; Only a line to draw gets its map coordinates, sectors and clip. The sine,
 ;;; cosine and origin of the rotation are calculated one time for each frame.
 ;;; The line drawer has one loop for the lines that are wider than high (an x
 ;;; step for each pixel) and one for the other lines (a y step for each
-;;; pixel). They give the pixels of the Bresenham loop of the C code.
+;;; pixel), using Bresenham error accumulation.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -81,8 +79,8 @@ VW_TR         .equ    132
 VW_TT         .equ    27
 VW_TB         .equ    140
 
-;;; The screen points of the line ends in a frame of the fast turn, by
-;;; vertex (fastLine): bank $74 (lists.inc, not cached). LV_TAB: 8 * the
+;;; Cache projected endpoints by vertex for fastLine. The allocations are
+;;; MM_AMKEY, MM_LVTAB and MM_VSTAB in memmap.inc. LV_TAB holds 8 * the
 ;;; vertex number of each line end (0xffff: none), from the vertex hash of
 ;;; I_InitSegVertices (src/iigs/i_viigs65.s: x, y, number, 6 bytes an entry,
 ;;; h = (x * 31 + y) & 8191); VS_TAB: 8 bytes a vertex: the frame of its
@@ -432,8 +430,8 @@ start:        lda     .near stopped
               jsr     .kbank centerWindow
               brl     changeWindowLoc
 
-;;; findMinMaxBoundaries: AM_findMinMaxBoundaries: the box of the line ends
-;;; (with the else if of the C code), the scale limits.
+;;; findMinMaxBoundaries: collect the map bounds from line endpoints and
+;;; derive the zoom limits. A new minimum skips the maximum test.
 findMinMaxBoundaries:
               lda     ##0x7fff              ; min = INT16_MAX, max = -INT16_MAX
               sta     .near MIN16
@@ -2679,7 +2677,7 @@ outcode:      ldy     ##0
               rts
 
 ;;; clipY: TMPX = a.x + (dx * C) / dy with dy = a.y - b.y, dx = b.x - a.x
-;;; (int16, as the C code).
+;;; using signed 16-bit coordinate differences.
 clipY:        pha
               lda     .near (FL+2)
               sec
@@ -2699,7 +2697,7 @@ clipY:        pha
               rts
 
 ;;; clipX: TMPY = a.y + (dy * C) / dx with dy = b.y - a.y, dx = b.x - a.x
-;;; (int16, as the C code).
+;;; using signed 16-bit coordinate differences.
 clipX:        pha
               lda     .near (FL+4)
               sec

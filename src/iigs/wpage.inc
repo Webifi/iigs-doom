@@ -1,11 +1,16 @@
-;;; The direct page of the wall loop (WPAGE) of src/iigs/r_seg65.s: its
-;;; variables, also set by R_StoreWallRange of src/iigs/r_wall65.s.
+;;; Wall-producer scratch shared by r_wall65.s setup and r_seg65.s loops.
+;;; W_* constants below are byte OFFSETS from D = WPAGE. Outside that
+;;; environment, use WPAGE + W_* with an address mode that reaches bank 0.
+;;; W_X2 is twice the logical column, for indexing word-sized clip arrays;
+;;; record rows remain in full-view coordinates even for reduced views.
 
 WPAGE         .equ    0x0a00          ; direct page of the loop, see src/iigs/iigs.scm
-WPOFS         .equ    WPAGE - 0x0900  ; from the direct page of the C code
+WPOFS         .equ    WPAGE - 0x0900  ; displacement from the default direct page
 
-;;; Direct page of the loop. 0x00..0x2b are the DC_* inputs of the drawers,
-;;; as in the direct page of the C code (R_CheckSegPage checks it).
+;;; Offsets $00-$2B mirror the default direct page's DC_* drawer inputs.
+;;; R_CheckSegPage verifies this layout. Edges/scales below are 32-bit
+;;; fixed-point accumulators; W_Y*/W_C*/W_F* row scratch is allocated as
+;;; words but specialized loops use byte encodings described in segvar.inc.
 W_TF          .equ    0x2c            ; topfrac, see above
 W_TS          .equ    0x30            ; topstep
 W_BF          .equ    0x34            ; bottomfrac

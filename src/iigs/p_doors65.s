@@ -1,8 +1,8 @@
-;;; Doors in 65816 assembly.
+;;; Door thinkers and line actions.
 ;;;
-;;; p_doors.c with the same results: the door thinker with the
-;;; gradual light of tagged manual doors, and EV_DoDoor; also the manual
-;;; doors (EV_VerticalDoor) of p_switch.c.
+;;; EV_DoDoor starts tagged doors; EV_VerticalDoor handles doors used directly
+;;; by a player or actor. The door thinker owns direction, waiting time and
+;;; ceiling movement, including gradual lighting for tagged manual doors.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -19,7 +19,7 @@
               .extern P_FindLowestCeilingSurrounding, IIGS_MulLo16, _Mul32
               .extern _g_sides, _g_player, S_StartSound
 
-VDOORSPEED_HI .equ    2               ; FRACUNIT * 2, p_spec.h
+VDOORSPEED_HI .equ    2               ; door speed: 2 map units per tic
 VDOORWAIT     .equ    150
 
               .section znear, bss
@@ -41,7 +41,7 @@ ED_SEC:       .space  4
 VD_PLAYER:    .space  2               ; EV_VerticalDoor: 1 for the player
 
               .section cfar, rodata
-;;; PD_BLUEK, PD_YELLOWK, PD_REDK (d_englsh.h)
+;;; Messages for locked doors, selected by the required key color.
 msgBlue:      .asciz  "You need a blue key to open this"
 msgYellow:    .asciz  "You need a yellow key to open this"
 msgRed:       .asciz  "You need a red key to open this"
@@ -675,9 +675,9 @@ vdOpen:       jsr     .kbank edLine         ; no back side: oof
               lda     [.tiny _Dp],y
               cmp     ##0xffff
               bne     1$
-              lda     .near VD_PLAYER       ; (for a monster the C code reads
-              beq     5$                    ; the mobj of a NULL player: no
-              brl     oof                   ; sound here)
+              lda     .near VD_PLAYER       ; only a player gets the failed-use sound
+              beq     5$
+              brl     oof
 5$:           rtl
 1$:           ldx     ##SIZEOF_SIDE         ; sec = the back sector
               jsl     long:IIGS_MulLo16

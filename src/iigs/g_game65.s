@@ -1,10 +1,11 @@
-;;; The game flow in 65816 assembly.
+;;; Game actions, tic commands, demo playback and save slots.
 ;;;
-;;; g_game.c with the same results: the tic command from the keys,
-;;; the game actions (level load, new game, demo, completed level,
-;;; intermission, finale), the demo playback, and the save slots. The
-;;; slots are part of the settings file (F_SLOTS of src/iigs/m_config65.s):
-;;; a saved game goes to the disk with it (saveSelect of src/iigs/m_menu65.s).
+;;; G_BuildTiccmd converts held actions into the command consumed by a game
+;;; tic. G_Ticker processes pending game actions and dispatches the current
+;;; game state. Level completion, intermission, finale and demo transitions
+;;; are coordinated here rather than by their drawing routines.
+;;; Save slots are records in the settings file (m_config65.s:F_SLOTS);
+;;; m_menu65.s:saveSelect writes that file to disk.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -28,7 +29,7 @@
               .extern maxammo, settingsFile
 
 PL            .equ    _g_player
-INITIAL_HEALTH .equ   100             ; a new player (p_inter.c): health,
+INITIAL_HEALTH .equ   100             ; a new player: health,
 INITIAL_BULLETS .equ  50              ;   bullets
 FINETURNS     .equ    3               ; frames of fine turns (fineturn)
 #if MAXTICS > 7
@@ -886,10 +887,10 @@ doWorldDone:  jsl     long:F_LoadScreen     ; retire the map before LOADING
 ;;; ---------------------------------------------------------------------------
 ;;; The saved games: 8 slots in the settings file (settingsFile + F_SLOTS,
 ;;; src/iigs/m_config65.s), which goes to the disk only when the player
-;;; saves a game or picks SAVE SETTINGS (src/iigs/m_menu65.s). A
-;;; save is the start of a new game of its map with the level times, the
-;;; weapons and the ammo of the save (Doom8088, from the GBA version of
-;;; Doom). A slot has SLOT_SIZE bytes: 1 for a save, the skill, the map, 0,
+;;; saves a game or picks SAVE SETTINGS (src/iigs/m_menu65.s). Loading a
+;;; save restarts its map with the stored level times, weapons and ammo;
+;;; monsters and other world state are recreated by the level loader.
+;;; A slot has SLOT_SIZE bytes: 1 for a save, the skill, the map, 0,
 ;;; the level times (4), the weapons owned (0 or 1 each), the ammo and its
 ;;; maximum (2 bytes each).
 ;;; void G_UpdateSaveGameStrings(void): "EMPTY", or "E1Mn" for the map of a

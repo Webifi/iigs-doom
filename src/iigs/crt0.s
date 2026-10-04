@@ -4,6 +4,13 @@
 ;;; code and initialized data are already in place, so only the sections
 ;;; without a source in data_init_table (the linker's list of the BSS
 ;;; sections) get zeros here. Then main (src/iigs/i_iigs65.s) runs.
+;;;
+;;; This establishes the default calling environment: D points at
+;;; _DirectPageStart, DBR selects _NearBaseAddress, and A/X/Y are 16-bit.
+;;; Hot routines can change those settings; their local entry/exit comments
+;;; take precedence. _Dp below is a set of memory-backed argument/scratch
+;;; registers, not the processor's D register. Four-byte pointer slots hold
+;;; the address low word followed by the bank/high word.
 
               .rtmodel cstartup, "iigs"
               .rtmodel version, "1"

@@ -1,9 +1,9 @@
-;;; Switches and buttons in 65816 assembly.
+;;; Line-special dispatch and switch/button textures.
 ;;;
-;;; p_switch.c with the same results: the switch textures, the
-;;; buttons that change back, and P_UseSpecialLine; also P_CrossSpecialLine
-;;; of p_map.c. The manual doors (EV_VerticalDoor) are in
-;;; src/iigs/p_doors65.s.
+;;; P_UseSpecialLine and P_CrossSpecialLine route a triggered line to its
+;;; door, floor, platform or other action. Switch textures stay changed;
+;;; timed buttons retain the original texture so the timer can restore it.
+;;; Manual-door movement is implemented by p_doors65.s:EV_VerticalDoor.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

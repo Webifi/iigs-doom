@@ -1,9 +1,12 @@
-;;; The record layouts and the numbers of the game (the structs and enums
-;;; of Doom8088 that the assembly code keeps): OFS_ an offset in a record,
-;;; SIZEOF_ the size of a record, CONST_ a number. A 32-bit number has
+;;; Shared object layouts and numeric identifiers used by the assembly.
+;;; OFS_ is a byte offset, SIZEOF_ a record size in bytes, CONST_ a value.
+;;; Multi-byte fields are little-endian. A 32-bit number has
 ;;; _LO and _HI words. The code multiplies by some sizes with shifts:
 ;;; SIZEOF_SUB 8, SIZEOF_SEG 18, SIZEOF_NODE 28, SIZEOF_LINE 36,
 ;;; SIZEOF_SEC 58, SIZEOF_SIDE 14.
+;;; Changing a size therefore requires auditing address arithmetic as well
+;;; as named offsets; changing a field width affects indirect-load/store
+;;; sequences even when later offsets are kept fixed.
 
 
 ;;; vissprite_t: a sprite to draw (R_ProjectSprite)

@@ -1,7 +1,15 @@
-;;; Main loop and display.
+;;; Main loop: collect input, advance game tics, then build a display frame.
 ;;; The command-line timedemo runs one tic per frame; normal play and the
 ;;; menu benchmark run tics from the DOC clock. Static screens track menu
 ;;; and skull versions so an idle menu does not repaint the whole screen.
+;;;
+;;; D_DoomMain initializes the engine and runs the outer loop; display
+;;; chooses the level, automap, intermission or finale path. During a level,
+;;; R_RenderPlayerView produces column records, AM_Drawer may append overlay
+;;; records, and R_DrawLists consumes them. This ordering is also the scratch
+;;; memory lifetime: game-tic and renderer routines reuse direct-page bytes.
+;;; A full record pool can force replay before the final R_DrawLists call;
+;;; r_list65.s:flush preserves the interrupted producer's scratch state.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -47,7 +55,7 @@
 #endif
 
 PL            .equ    _g_player
-AM_ACTIVE     .equ    1               ; automapmode, am_map.h
+AM_ACTIVE     .equ    1               ; automapmode bit: map visible
 AMAP_PAL      .equ    11              ; i_viigs65.s: AMAP_PAL.
 STRIP_ROWS    .equ    10              ; i_viigs65.s: STRIP_ROWS.
 AM_OVERLAY    .equ    2
@@ -481,6 +489,9 @@ dmLevel72:    sta     .near viewtop
               bra     dmLevel75
 dmLevel74:    lda     ##CONST_VIEWHEIGHT
               sta     .near viewbottom
+;;; Finish the view installation before producing any records. The chosen
+;;; producer strides, record-page map and replay image must describe the
+;;; same size. Overlay records come last so replay paints them over the view.
 dmLevel75:    jsl     long:vwFrame          ; viewwin.inc: view size and border.
               jsl     long:R_FillStamps
               lda     ##.near PL

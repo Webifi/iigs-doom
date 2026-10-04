@@ -1,9 +1,9 @@
-;;; Sine and cosine of tables.c in 65816 assembly.
+;;; Fixed-point sine and cosine lookup.
 ;;;
 ;;; finesine and finecosine read full tables (build/tables/sine.bin of
-;;; tools/gensine.py, loaded from disk at SINE_TAB) that hold the values
-;;; of the C functions, with their corrections. finesineapprox and
-;;; finecosineapprox use the quarter table finesineTable_part_1 of C.
+;;; tools/gensine.py, loaded from disk at SINE_TAB). These retain the
+;;; entry-specific rounding adjustments used by game math. finesineapprox
+;;; and finecosineapprox mirror/negate the compact quarter table below.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -76,7 +76,7 @@ quarter:      cmp     ##2048
 
 ;;; ---------------------------------------------------------------------------
 ;;; The first quarter of Doom's finesine, 16 bits: sin((i + 0.5) * 2 pi /
-;;; 8192) * 65536 for i = 0-2047 (finesineTable_part_1 of tables.c).
+;;; 8192) * 65536 for i = 0-2047.
 ;;; ---------------------------------------------------------------------------
               .section cnear, rodata
               .public finesineTable_part_1

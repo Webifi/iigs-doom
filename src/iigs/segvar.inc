@@ -1,7 +1,10 @@
 #ifndef V_PAD
 #define V_PAD 1
 #endif
-;;; One loop of R_RenderSegLoop (src/iigs/r_seg65.s), for one kind of seg:
+;;; Column-loop template, included repeatedly by r_seg65.s with different
+;;; V_* settings. L(name) expands to a label within that variant, so the
+;;; conditional blocks below become separate loops rather than runtime tests.
+;;; One loop handles a fixed combination of wall tiers and plane marks:
 ;;;   V_NAME        label prefix
 ;;;   V_ONE         single sided line (mid texture)
 ;;;   V_TOP, V_BOT  top wall, bottom wall of a two sided line

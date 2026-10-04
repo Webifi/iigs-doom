@@ -1,11 +1,9 @@
-;;; The intermission in 65816 assembly.
+;;; Intermission counters, input and episode map.
 ;;;
-;;; wi_stuff.c and wi_lib.c with the same results: the counts of
-;;; the level (kills, items, secret, times) count up with sounds, then the
-;;; map shows the next level; fire or use shortens each stage. G_DoCompleted
-;;; always starts it with _g_wminfo, so the code reads _g_wminfo. The lump
-;;; numbers of the pictures are found once in WI_Init. The music call (a
-;;; stub) is gone.
+;;; Count kills, items, secrets and times with sound cues, then show the next
+;;; level on the map. Fire/use advances each stage. doCompleted in g_game65.s
+;;; supplies _g_wminfo, the input record for this module. WI_Init resolves
+;;; the picture lump numbers once; the ticker and drawer share the stage state.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

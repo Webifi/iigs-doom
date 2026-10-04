@@ -1,10 +1,14 @@
-;;; Sprite drawing in 65816 assembly.
+;;; Sprite clipping, masked-column dispatch and fuzz replay.
 ;;;
-;;; R_DrawSprite, R_DrawVisSprite (shadow sprites) and R_DrawMaskedColumn of
-;;; r_draw.c. The C code with 32-bit pointers spends most of its
-;;; time on pointer loads; here the drawsegs and clip arrays in the near
-;;; bank use abs,x addressing, and the post multiplies use the quarter
-;;; square tables of m_fixed65.s.
+;;; r_thing65.s projects objects into vissprites. r_frame65.s sorts them
+;;; and calls R_DrawSprite here. Each sprite is clipped against the wall
+;;; drawsegs before R_DrawVisSprite (r_seg65.s) emits its opaque posts.
+;;; Shadow sprites emit K_FUZZ records; fuzzColumn reads neighboring pixels
+;;; when those records are replayed, so it must not run during projection.
+;;;
+;;; A patch column contains posts (opaque row runs separated by transparent
+;;; gaps). Drawsegs and clip arrays use near-bank indexed accesses; post
+;;; scaling uses the quarter-square helpers in m_fixed65.s/mul.inc.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

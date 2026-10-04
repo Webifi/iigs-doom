@@ -1,8 +1,8 @@
-;;; Sector lights in 65816 assembly.
+;;; Sector-light thinkers and light-triggering line specials.
 ;;;
-;;; p_lights.c with the same results: the flash, strobe and glow
-;;; thinkers, their spawn functions, P_FindMinSurroundingLight and
-;;; EV_LightTurnOn.
+;;; Flash, strobe and glow thinkers update a sector's light level. Their
+;;; spawn routines initialize the countdowns and bounds; tagged line actions
+;;; use P_FindMinSurroundingLight and EV_LightTurnOn to choose new levels.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -16,10 +16,10 @@
               .extern _Dp, _g_sectors, P_Random, P_AddThinker, Z_CallocLevSpec
               .extern getNextSector, P_FindSectorFromLineTag, IIGS_MulLo16
 
-GLOWSPEED     .equ    8               ; p_spec.h
+GLOWSPEED     .equ    8               ; light-level change per glow tic
 STROBEBRIGHT  .equ    5
 
-;;; The thinkers of p_lights.c: thinker_t (12 bytes), then
+;;; Each light effect starts with the 12-byte thinker header, followed by
 LT_SECTOR     .equ    12              ; all: the sector
 LF_COUNT      .equ    16              ; lightflash_t (22 bytes)
 LF_MAXLIGHT   .equ    18

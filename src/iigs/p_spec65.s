@@ -1,8 +1,8 @@
-;;; Sector and line specials in 65816 assembly.
+;;; Sector/line helpers and per-tic special updates.
 ;;;
-;;; p_spec.c with the same results: the sector helpers, the tag
-;;; checks, the animated textures, the switch timers, the scrolling walls
-;;; and the spawning of the specials at level start.
+;;; Level setup spawns sector effects here. P_UpdateSpecials advances animated
+;;; textures, timed switch resets and scrolling walls. Tag and neighboring-
+;;; sector searches supply the targets used by door, floor and platform actions.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -21,7 +21,7 @@
               .extern P_AddThinker, Z_CallocLevSpec, IIGS_MulLo16
               .extern MA, MB, MR, umul16
 
-FASTDARK      .equ    15              ; p_spec.h
+FASTDARK      .equ    15              ; fast strobe dark interval, in tics
 SLOWDARK      .equ    35
 SC_TEXOFS     .equ    12              ; scroll_t: thinker_t, textureoffset
 SC_SIZE       .equ    16

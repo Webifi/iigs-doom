@@ -1,9 +1,9 @@
-;;; Trace intercepts in 65816 assembly.
+;;; Collect line and thing intersections for a block-map trace.
 ;;;
-;;; PIT_AddLineIntercepts and PIT_AddThingIntercepts of
-;;; p_maputl.c with P_PointOnDivlineSide, P_InterceptVector3 and
-;;; its FixedDiv, with the same results. P_PathTraverse (C) calls them
-;;; through the block map iterators.
+;;; P_PathTraverse (p_path65.s) visits relevant blocks and calls
+;;; the line/thing collectors here. They append candidate intercepts;
+;;; p_path65.s:traverse handles their order and the caller's hit callback.
+;;; interceptVector3 and fixedDiv compute the trace fraction at a crossing.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -395,8 +395,8 @@ ivProd:       txa                           ; Y = 4 - X: dl.o
 9$:           brl     ivSlow
               .space  10                    ; (fixedDiv keeps its address)
 
-;;; fixedDiv: X:C = FixedDiv(TC_A, TC_B) of p_maputl.c, a long
-;;; division with the signed 32-bit compares and shifts of the C code.
+;;; fixedDiv: X:C = FixedDiv(TC_A, TC_B), using long division with
+;;; signed 32-bit comparisons and shifts.
 ;;; After the first loop, a is in Y:X (no stores for a). One loop makes
 ;;; the bits of ch, then the 16 bits of cl, in TC_CL: for cl it starts
 ;;; with a bit above them, which ends the loop. ibit is in MA. The loop 7$
@@ -852,9 +852,9 @@ longTrace:    lda     ##0                   ; FRACUNIT*16 < dx
 ;;; VT_INVB = 0x8000 when R > 0 is side 0 (x and DX > 0, y and DY < 0):
 ;;; the sides are 0x8000 * (side ^ inv), which only the two ends of a
 ;;; line or thing compare. VT_RR = 0 for a short trace
-;;; (P_PointOnLineSide), when dx or dy is 0 (the C code has other tests
-;;; for them) or |DX| + |DY| > 2900 (the products of the C code could
-;;; overflow).
+;;; (P_PointOnLineSide), when dx or dy is zero (axis-aligned traces use
+;;; separate side tests), or |DX| + |DY| > 2900 (the full side-test products
+;;; can overflow outside this range).
 ;;; ---------------------------------------------------------------------------
               .public sideSetup
 sideSetup:    lda     .near PT_FLAGS        ; other flags than the last trace: the
@@ -1059,7 +1059,7 @@ MIDDIFF       .macro
 ;;; SIDE1 fail, pt, cst, lim, done: the side of a point from X' and Y' (X
 ;;; and Y: the high words of its x and y minus VT_OXC, VT_OYC) as 0x8000 *
 ;;; (side ^ inv) in C, then to done; to fail when this way cannot tell.
-;;; The sign test of the C code first. Else L = 8 main - (sub + V2) * SQ /
+;;; Test the signs first. Otherwise L = 8 main - (sub + V2) * SQ /
 ;;; 256 - C (sideSetup: cst = C - VJ * SQ - lim / 2) from the quarter
 ;;; squares at 2 (sub + V2 + SQ) and 4 SQ less, for |X'|, |Y'| <= VRN: the
 ;;; side from bit 15 of L + lim / 2 unless it is below lim. At pt the pair
@@ -1067,7 +1067,7 @@ MIDDIFF       .macro
 ;;; Any data bank; the temporaries are MA and MB (src/iigs/m_fixed65.s).
 SIDE1         .macro  fail, pt, cst, lim, done
               tya                           ; (dy ^ dx ^ x ^ y) < 0: the side of
-              eor     long:VT_SGN           ;   the C code is (dy ^ x) < 0
+              eor     long:VT_SGN           ;   the side is (dy ^ x) < 0
               bmi     1$
               txa
               bmi     2$

@@ -11,6 +11,17 @@
 ;;; on in an extra page (a K_NEXT record); the extra pages are XP_FIRST..$FF.
 ;;; COLW (src/iigs/r_list65.s) holds the free byte of each list: the page
 ;;; << 8 | the offset, one word for each column.
+;;;
+;;; Records never straddle a 256-byte page. There is no end opcode: replay
+;;; stops at COLW[column], following K_NEXT when a list spans pages.
+;;; PAGE_ROOM reserves two bytes for that link. If the extra-page pool is
+;;; exhausted, newPage flushes all lists and allocation resumes on empty
+;;; first pages. A producer must survive that nested replay.
+;;;
+;;; R_ROW is inclusive and R_END exclusive for texture/fill records.
+;;; K_FUZZ instead stores a row count at byte 2; K_OVL stores one pixel's
+;;; masks, and K_NEXT stores only a page number. K_* values are byte
+;;; offsets into replay dispatch tables, not consecutive type numbers.
 #include "memmap.inc"
 RECBANK       .equ    MM_RECBANK
 RECBASE       .equ    MM_RECBASE
@@ -29,20 +40,21 @@ COLPAGE       .macro
 PAGE_ROOM     .equ    254             ; a record ends at this offset or before,
                                       ; so a K_NEXT record fits after it
 
-;;; A record: its kind (the offset of its drawer in the table of
-;;; R_DrawLists), then its fields, all bytes.
+;;; Common prefix: kind at byte 0, first row at byte 1. The remaining
+;;; fields depend on kind; even multi-byte pointers are stored bytewise.
 R_KIND        .equ    0
 R_ROW         .equ    1               ; the first row
 R_END         .equ    2               ; the row after the last
-;;; K_FILL: one color: the byte of the first row, then of the row after it.
+;;; K_FILL (5 bytes): [kind, first, end, first-row color, next-row color].
+;;; The two color bytes alternate to preserve row-parity dithering.
 R_B1          .equ    3
 R_B2          .equ    4
 FILL_SIZE     .equ    5
-;;; K_TEX: a texture column for the stepping drawer (walls, sprites, masked
-;;; walls). The texture position one row before the first and the step, both >> 1
-;;; (8.8 in 7.8): the fraction byte, then the texel (0..127). The texels.
-;;; The page of the colormap of the even rows (in the bank of
-;;; iigs_shrcmapA).
+;;; K_TEX (11 bytes): rows, texture position, step, texel pointer, colormap.
+;;; Position is for the row BEFORE R_ROW because replay steps before its
+;;; first lookup. Position and step are shifted right once into 7.8 format:
+;;; fraction byte, then texel index (0..127). R_SRC is a 24-bit pointer;
+;;; R_CMP is the even-row colormap page in iigs_shrcmapA's bank.
 R_TF          .equ    3
 R_TI          .equ    4
 R_SF          .equ    5
@@ -78,7 +90,8 @@ NEXT_SIZE     .equ    2
 ;;; fill of the same bytes gets a record only for its rows that its span of
 ;;; the frame before (stamp W_FSP) did not show. A record over the rows of
 ;;; the walls (sprites, masked walls, shadows, the automap overlay) cuts the
-;;; spans of its column (FSCUT). Bank $74: the cache does not hold it.
+;;; spans of its column (FSCUT). Storage is at MM_FS in cached RAM; its
+;;; address and cache-slot reservation are defined in memmap.inc.
 FS_ROW        .equ    MM_FS           ; the end of the top span, the first
                                       ;   row of the bottom span
 FS_EVEN       .equ    (MM_FS + 0x200) ; the byte of the even rows
@@ -112,21 +125,20 @@ FSCUTE        .macro  first
 ;;; row, byte 2c + 1 the row after the last (0, 0: no range; 255, 254: none
 ;;; in this frame, as a shadow reads the rows next to its own); word 2c of
 ;;; CV_REC is the record. R_ClearCovered initializes both tables at startup
-;;; and each level; R_DrawLists sets 0, 0 again. Bank $74: the cache
-;;; does not hold it.
+;;; and each level; R_DrawLists sets 0, 0 again. These tables follow FS_*
+;;; at MM_FS; they are not another allocation or a second record pool.
 CV_ROW        .equ    (MM_FS + 0x800)
 CV_REC        .equ    (MM_FS + 0xa00)
 
-;;; Bank $74 also holds the screen points of the automap's line ends by
-;;; vertex (fastLine of src/iigs/am_map65.s): LV_KEY $0C00, LV_TAB $1000,
-;;; VS_TAB $4000-$BFFF.
+;;; Automap endpoint caches have separate MM_AMKEY/MM_LVTAB/MM_VSTAB
+;;; allocations; am_map65.s defines their record layouts.
 
 ;;; The weapon skip (weaponClipSame of src/iigs/r_frame65.s). Byte 2c of
 ;;; WCLIP is floorclip of column c after the clip pass of the weapon: the
 ;;; first row of the run of weapon posts at the view bottom, + 1. WPREV is
 ;;; the vissprite of the weapon of the frame before (lump 0xffff: none).
 ;;; WTMP: the floor clip of a sprite in a frame that skips the weapon rows
-;;; (wclipSprite). Bank $74: the cache does not hold it.
+;;; (wclipSprite). Storage starts at MM_WCLIP in memmap.inc.
 WCLIP         .equ    MM_WCLIP
 WPREV         .equ    (MM_WCLIP + 0x180)
 WTMP          .equ    (MM_WCLIP + 0x1c0)

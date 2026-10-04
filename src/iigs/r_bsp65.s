@@ -1,13 +1,16 @@
 ;;; BSP walk in 65816 assembly.
 ;;;
-;;; R_RenderBSPNode, R_CheckBBox, R_Subsector, R_AddLine and
-;;; R_ClipWallSegment of r_draw.c, with the same results; the light of
-;;; Doom's renderer (R_WallLight, R_SpriteColorMap, the plane colors) in
-;;; place of the one light of each sector of r_draw.c (R_LoadColorMap).
-;;; R_AddSprites is in src/iigs/r_thing65.s, R_LoadSkyPatch in
-;;; src/iigs/r_frame65.s. The walk calls itself with
-;;; jsr; each level keeps its node on the stack. The code below it keeps
-;;; its values in registers and stores only what the callees read.
+;;; R_RenderBSPNode traverses the map's binary space partition (BSP).
+;;; Subsector processing collects sector sprites through R_AddSprites
+;;; (r_thing65.s), projects wall segs to column ranges, and rejects columns
+;;; already closed by nearer geometry. Visible ranges go to
+;;; R_StoreWallRange (r_wall65.s), which prepares the column producer.
+;;; The recursive bspNode calls use JSR, with each pending node on the stack.
+;;;
+;;; solidcol is horizontal visibility, not a screen buffer. The ceiling
+;;; and floor clip arrays describe the vertical opening of each column.
+;;; This file also selects wall/sprite colormaps and flat plane colors;
+;;; it does not replay the column records or write the final texture pixels.
 ;;;
 ;;; The walk keeps the angle of each vertex (the segs that meet at a vertex
 ;;; need the same R_PointToAngle16) while the view stays at the same map
@@ -147,7 +150,7 @@ R_RenderBSPNode:
               sta     dp:.tiny ND
               rtl
 
-;;; bspNode: R_RenderBSPNode(C) of the C code, with jsr. The node stays on
+;;; bspNode: walk node C recursively with JSR. The node stays on
 ;;; the stack (actual node address) for the back side; side0 and side1 know the
 ;;; side of the view.
 bspNode:      bit     ##CONST_NF_SUBSECTOR  ; a subsector
@@ -293,12 +296,10 @@ c14SideDone:  rts
 ;;; from the place of the view: x: viewx <= left << 16 (0), viewx < right
 ;;; << 16 (1), else 2; y: viewy >= top << 16 (0), viewy > bottom << 16 (1),
 ;;; else 2.
-;;; Two tests before the corner angles give false where the C code gives
-;;; false (BOXPRE): all columns solid, and the angles of the two corners
-;;; of the case lie in an arc R (see below) whose angles, less viewangle,
-;;; are all in clipangle..-clipangle: then the C code finds both corners
-;;; off one edge, or wraps them around behind the view and still finds
-;;; them off an edge. (demo3: 17 of the 99 corner angles a frame.)
+;;; BOXPRE rejects the box before the full corner-angle calculation when
+;;; every column is solid, or when the selected corners' bounding arc R
+;;; lies wholly outside the view. The arc test also covers corners that
+;;; wrap behind the viewpoint; uncertain cases continue to the full test.
 ;;; ---------------------------------------------------------------------------
 checkBox:     ldy     ##(2*CONST_BOXLEFT)
               lda     .near (viewx+2)
@@ -563,7 +564,7 @@ boxAngles:    sec
               rts
 
 ;;; scan0: C = the first x in X..BS_LAST-1 with solidcol[x] == 0, else
-;;; BS_LAST (R_ScanCols(first, last, 0) of r_draw.c). scan1: the same for
+;;; BS_LAST. scan1: the same search for
 ;;; solidcol[x] == 1. They test 4 columns at a time; the columns past the
 ;;; end can be any bytes, so the result is at most BS_LAST.
 scan0:        cpx     .near BS_LAST
@@ -885,11 +886,9 @@ sl0:          lda     .near BS_SEGX         ; angle2 = R_PointToAngle16(v2)
               lda     dp:.tiny SG
               sta     dp:.tiny WP_SEG
 
-;;; clipWall: R_ClipWallSegment(BS_FIRST, BS_LAST, 0). The render flags of
-;;; the C code (RF_IGNORE, RF_CLOSED: skip the line, clip it as solid) are
-;;; never set (the low byte of r_flags stays 0, R_RecalcLineFlags only kept
-;;; r_validcount, which nothing else reads): no test of them, no
-;;; memset of solidcol here (R_RenderSegLoop marks the solid columns).
+;;; clipWall: split [BS_FIRST, BS_LAST) into runs not covered by solidcol
+;;; and pass each run to R_StoreWallRange. R_RenderSegLoop marks columns
+;;; solid as it closes their vertical opening, so later walls skip them.
 clipWall:     ldx     .near BS_FIRST        ; while (first < last)
               cpx     .near BS_LAST
               bcs     segNext
@@ -1097,7 +1096,7 @@ R_SpriteColorMap:
 
 ;;; The column (0-160) of each view angle (4096 fine angles) from 1032 to
 ;;; 3073; the angles below 1032 give 160, the angles from 3073 give 0
-;;; (viewangletoxTable of r_draw.c, and 0 for 3073: the clipped angles
+;;; (viewangletoxTable, plus 0 for index 3073: the clipped angles
 ;;; are at most 3073).
               .section cnear, rodata
               .public viewangletoxTable

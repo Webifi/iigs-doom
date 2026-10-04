@@ -74,34 +74,22 @@ tintC8:       .space  2
 
 ;;; ***************************************************************************
 ;;;
-;;; IIGS_PollKeys - the key bytes of the ADB keyboard and the reports of the
-;;; ADB mouse for I_StartTic.
+;;; IIGS_PollKeys - collect keyboard transitions and mouse reports.
 ;;;
-;;; The IIgs keyboard register gives only the last key, so the game reads the
-;;; raw key bytes of the ADB keyboard, as the SRQPoll call of the ADB Tool Set
-;;; does (Wolfenstein 3D for the IIgs uses it). The ADB microcontroller does
-;;; not poll the keyboard (IIGS_StartKeys); when the keyboard has keys, it
-;;; asks for service, and the microcontroller sends a byte with bit 3 set
-;;; (ADB_KBDSRQ). Only then this routine sends a Talk to register 0 of the
-;;; keyboard. The answer is a byte with bit 7 set (bits 0-2 are 0 when the
-;;; keyboard had nothing) and two key bytes (bit 7: key up, bits 0-6: the
-;;; ADB key code, $FF: none) into the ring iigs_adbq.
-;;; MAME stops a ZipGS for 30 ms after each write to the ADB (a real ZipGS
-;;; has no ADB delay); a write to ZIPCANCEL after it ends that delay.
-;;; A Talk takes about 5 ms on the ADB bus. The ADB data interrupt (on while
-;;; the game interrupt runs, src/iigs/irq65.s) calls this routine when the
-;;; answer comes: a mouse report of the microcontroller must not replace it.
-;;; The microcontroller polls the mouse, about every 8 ms while it moves;
-;;; the ADB mouse interrupt calls this routine for each report (a report
-;;; that is not read is lost with its move). When iigs_mouseon is set, the
-;;; moves go into iigs_mousedx and iigs_mousedy, and the buttons into the
-;;; ring as the key codes ADB_MOUSE0 (fire) and ADB_MOUSE1 (strafe).
-;;; The game interrupt also calls it every 20 ms. The ADB keyboard of MAME
-;;; asks for service only in a mouse poll with no mouse report, so while
-;;; the mouse moves, keys come late or are lost there: then the routine
-;;; also sends a Talk after each MOUSE_TALK mouse reports (about 30 ms).
-;;; MAME asks for one more Talk after each key (its answer has no keys).
-;;; A, X, Y, DBR and D stay; any DBR, index registers of any size.
+;;; IIGS_StartKeys disables automatic keyboard polling. A keyboard service
+;;; request (ADB_KBDSRQ) starts a Talk to register 0; adbTalk prevents a
+;;; second request before the answer, and adbHalt blocks new Talks at exit.
+;;; Drain data answers before mouse reports so the response bytes are read
+;;; promptly. Empty answers carry no keys; unrelated answer bytes are skipped.
+;;; Key bytes enter iigs_adbq: bit 7 means release, bits 0-6 identify the
+;;; physical ADB key, and $FF is ignored. I_StartTic consumes this ring.
+;;;
+;;; Always drain mouse reports, including when mouse input is disabled, to
+;;; clear their interrupt. When enabled, accumulate motion in iigs_mousedx/y
+;;; and enqueue button transitions as ADB_MOUSE0/ADB_MOUSE1. Every MOUSE_TALK
+;;; reports, attempt a backup keyboard Talk so sustained mouse traffic does
+;;; not depend solely on service-request delivery.
+;;; A, X, Y, DBR and D are preserved; entry allows either index-register width.
 ;;;
 ;;; ***************************************************************************
 
@@ -146,9 +134,9 @@ IIGS_PollKeys:
               plp
               rtl
 
-;;; talk: a Talk to register 0 of the keyboard when none is out, none is
-;;; halted and the command register is free; the ZipGS delay of MAME ends.
-;;; 8-bit A.
+;;; talk: request keyboard register 0 if no Talk is pending, shutdown has
+;;; not started and the command register is free. ZIPCANCEL clears any
+;;; accelerator delay after the command write. Requires 8-bit A.
 talk:         lda     long:adbTalk
               ora     long:adbHalt
               bne     9$

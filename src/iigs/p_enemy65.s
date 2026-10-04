@@ -1,9 +1,9 @@
-;;; Monster thinking in 65816 assembly.
+;;; Monster decisions and action functions.
 ;;;
-;;; p_enemy2.c and p_enemy.c, with the same results.
-;;; C calling convention: the actor (a far pointer) in _Dp[0-3]. A public
-;;; routine keeps the actor in AP (_Dp+8, callee saved, kept on the stack)
-;;; for its helpers, which read it there.
+;;; The actor argument is a four-byte far pointer in _Dp[0-3]. Public action
+;;; routines save the caller's AP (_Dp+8) on the stack, put their actor there,
+;;; and restore AP on return. Local helpers read AP instead of taking another
+;;; actor argument; preserve it across calls that can trigger another action.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -237,8 +237,8 @@ pMoveTry:     lda     .near (PM_TRY+4)      ; P_TryMove(actor, tryx, tryy)
               lda     ##1
               rts
 
-;;; pMoveMul32: tryx and tryy with the 32-bit products (a speed of 65536
-;;; or more), as the C code.
+;;; pMoveMul32: compute tryx and tryy with full 32-bit products when
+;;; speed does not fit in the low word.
 pMoveMul32:   ldy     ##OFS_MO_MOVEDIR
               lda     [.tiny AP],y
               and     ##0x00ff

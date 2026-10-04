@@ -6,7 +6,7 @@ starts there, with the same result as a walk from the root.
 
 A node decides for a whole cell only when its side test gives one answer
 for every fixed_t point of the cell. The test is the one of the game
-(pointOnSide in src/iigs/r_iigs65.s, from R_PointOnSide of Doom8088):
+(pointOnSide in src/iigs/r_iigs65.s):
   dx == 0: the integer part ix of x against node.x;
   dy == 0: the integer part iy of y against node.y;
   else xp = x - (node.x << 16), yp = y - (node.y << 16); when

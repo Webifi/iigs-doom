@@ -1,8 +1,8 @@
-;;; The heads-up text in 65816 assembly.
+;;; Heads-up message text and automap title.
 ;;;
-;;; hu_stuff.c with the same results: the message line at the top
-;;; of the view (4 seconds) and the map title over the automap. The text
-;;; cache of i_viigs.c draws a line that did not change again.
+;;; The message line remains at the top of the view for four seconds; the
+;;; map title belongs to the automap. i_viigs65.s handles cached text drawing
+;;; and restores pixels beneath text when the underlying view is replaced.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -23,7 +23,7 @@ HU_TITLEY     .equ    (CONST_VIEWHEIGHT - 1 - HU_FONT_HEIGHT)
 HU_MSGY       .equ    0
 HU_MSGTIMEOUT .equ    (4 * CONST_TICRATE)
 SCREENWIDTH   .equ    320
-AM_ACTIVE     .equ    1               ; am_active, am_map.h
+AM_ACTIVE     .equ    1               ; automapmode bit: map visible
 
 ;;; a text line (hu_textline_t): y, the text (35 bytes), len
 TL_Y          .equ    0
@@ -51,7 +51,7 @@ HU_W:         .space  2
 
               .section cfar, rodata
 fontStart:    .asciz  "STCFN033"
-;;; the map names (HUSTR_E1M1..9 of d_englsh.h)
+;;; Map titles, indexed by episode-one map number.
 mapName1:     .asciz  "E1M1: Hangar"
 mapName2:     .asciz  "E1M2: Nuclear Plant"
 mapName3:     .asciz  "E1M3: Toxin Refinery"

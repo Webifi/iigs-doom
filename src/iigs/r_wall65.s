@@ -1,10 +1,15 @@
-;;; Wall setup in 65816 assembly.
+;;; Wall setup between BSP clipping and column production.
 ;;;
-;;; R_StoreWallRange of r_draw.c, with the same
-;;; results. The seg, side, line, sectors and texture tables are read
-;;; through long pointers in the direct page of the BSP phase (BSPDP of
-;;; src/iigs/r_sprite65.s); their banks stay for the frame. The drawseg is
-;;; in the near bank: X or Y = ds_p. Byte stores allow intervening register
+;;; R_StoreWallRange receives a visible horizontal range from r_bsp65.s.
+;;; It computes texture/height/scale inputs in WPAGE, prepares a drawseg
+;;; for later sprite clipping, and calls R_RenderSegLoop in r_seg65.s.
+;;; A wall "tier" is its middle, upper or lower textured vertical span;
+;;; ceiling/floor marks request flat fill spans around those tiers.
+;;;
+;;; The seg, side, line, sectors and texture tables use long pointers in
+;;; BSPDP (storage declared in r_sprite65.s); their banks stay for the
+;;; frame. The drawseg is in the near bank: X or Y = ds_p.
+;;; Byte stores allow intervening register
 ;;; work to overlap the accelerator write buffer. PUTWN/PUTWD use word
 ;;; stores where splitting would add overhead without useful overlap.
 ;;; Low-byte-only stores rely on the destination's high byte already being 0.
@@ -413,9 +418,8 @@ R_StoreWallRange:
               ;; of the seg (n: the unit vector of rw_normalangle), 16.16,
               ;; and OFF = (v1 - view) . (-sin, cos), the place of v1 along
               ;; the line: rw_distance = floor(D), rw_offset = floor(OFF) +
-              ;; the offsets (the C code: hyp * cos and -hyp * sin of
-              ;; rw_normalangle - rw_angle1). Along an axis they are
-              ;; differences; at another angle, distAny.
+              ;; texture offsets. Axis-aligned walls need only coordinate
+              ;; differences; distAny evaluates the dot products for other angles.
               bit     ##0x3fff              ; (C = rw_normalangle)
               beq     20$
               jsr     .kbank distAny
@@ -1558,7 +1562,7 @@ secds3:       sta     abs:2,x
               rts
 
 ;;; rowMod: C = Mod(sidedef->rowoffset, textureheight[C]): 0 <= result < b
-;;; for b > 0, as Mod of r_draw.c.
+;;; for b > 0; the result is always in 0..b-1.
 rowMod:       tax                           ; the texture
               ldy     ##OFS_SIDE_ROWOFFSET  ; a
               lda     [.tiny WP_SIDE],y
@@ -1980,7 +1984,7 @@ scaleSlow:    lda     .near SW_START        ; ds_p->scale1 = rw_scale
               ldy     .near ds_p
               PUT32Y  OFS_DS_SCALE2
               ;; rw_scalestep = (ds_p->scale2 - rw_scale) / (stop - start),
-              ;; truncated as in C: |N| / d by bytes (div8s), then the sign
+              ;; truncate toward zero: divide |N| / d by bytes, then apply sign
               ;; of N. |N| < 0x400000: the scales are 256..64 * FRACUNIT.
               lda     .near rw_stopx        ; D8 = d << 8, d = stop - start:
               dec     a                     ;   1..159

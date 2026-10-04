@@ -1,10 +1,18 @@
-;;; The frame of the view in 65816 assembly.
+;;; Frame setup and ordering of renderer work.
 ;;;
-;;; R_RenderPlayerView, R_SetupFrame and the clears at the frame start and
-;;; R_DrawMasked (the sprite sort, the masked mid textures, the player
-;;; sprites) of r_draw.c, and R_LoadSkyPatch and R_FreeSkyPatch of
-;;; r_sky.c, with the same results. R_RecalcLineFlags is in
-;;; src/iigs/r_wall65.s.
+;;; R_RenderPlayerView is the entry from d_main65.s:display:
+;;;   setupFrame -> reset wall/sprite clips -> R_WallFrame
+;;;              -> R_RenderBSPNode -> drawMasked.
+;;; The BSP phase builds wall records and collects visible sprites.
+;;; drawMasked sorts those sprites, clips them against drawsegs, emits
+;;; masked-wall records and finishes with the player's weapon.
+;;; R_DrawLists is called later by display, after any automap overlay.
+;;;
+;;; A drawseg is a wall's clipping metadata, not a column-list record.
+;;; vissprites describes projected sprites; lists.inc describes the final
+;;; per-column drawing commands. Keep these three representations distinct
+;;; when following the sprite/weapon clipping paths below.
+;;; R_RecalcLineFlags lives in r_wall65.s; sky patch lifetime is handled here.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -288,8 +296,8 @@ setupFrame:   ldy     ##(OFS_PL_MO+2)       ; mo = player->mo
               rts
 
 ;;; sortSprites: R_SortVisSprites: FR_ORDER = the vissprites by scale, the
-;;; largest first; equal scales keep their order (the insertion sort of the
-;;; C code, isort). FR_I = 2 * i and FR_N2 = 2 * n (words); FR_TEMP =
+;;; largest first. Insertion sort preserves the order of equal scales.
+;;; FR_I = 2 * i and FR_N2 = 2 * n (word offsets); FR_TEMP =
 ;;; s[i], FR_T its scale; Y = 2 * j.
 sortSprites:  lda     .near num_vissprite
               bne     1$
@@ -599,7 +607,7 @@ lineFlags:    pei     dp:.tiny (_Dp+10)
 
 ;;; higher, lower: FR_TMID = the higher (lower) of the fixed_t at offset Y
 ;;; of the front sector (_Dp[4-7]) and the back sector (_Dp[0-3]); the back
-;;; one when they are equal, as the C code.
+;;; sector supplies the value when they are equal.
 higher:       sty     .near FR_Y            ; front > back: front
               lda     [.tiny _Dp],y         ; (back < front)
               cmp     [.tiny (_Dp+4)],y

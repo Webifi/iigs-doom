@@ -1,7 +1,11 @@
-;;; The music of the level (tools/musbank.py; src/iigs/s_sound65.s starts
-;;; a song, the game interrupt of src/iigs/irq65.s plays it with DBR = the
-;;; bank of MUSBUF). MUSBUF: one bank, the one address to move (the level
-;;; loader puts the song image of the level at MB_IMAGE).
+;;; Music workspace shared by the loader and interrupt player.
+;;;
+;;; MB_* values are offsets within the single MUSBUF bank. s_sound65.s
+;;; loads the song image at MB_IMAGE, builds the lookup tables and uploads
+;;; samples before enabling playback. irq65.s runs with DBR set to this
+;;; bank and advances MB_SPTR through the stream built by tools/musbank.py.
+;;; The song's DOC sample image stays at MB_DOCSRC until uploaded; it is
+;;; not part of the interrupt player's workspace.
 #include "memmap.inc"
 MUSBUF        .equ    MM_MUSBUF       ; (src/iigs/memmap.inc)
 MUSBANK       .equ    MM_MUSBANK      ; all songs, from the disk (8 MB only)

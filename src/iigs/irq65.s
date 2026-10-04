@@ -1,18 +1,17 @@
-;;; The interrupt of the game.
+;;; Game interrupt dispatch and music-stream playback.
 ;;;
-;;; Sources: a byte from the ADB microcontroller (the ADB data interrupt), a
-;;; mouse report (the ADB mouse interrupt), and the DOC alarm (oscillator 30
-;;; of src/iigs/i_doc65.s), which runs only while music plays: each alarm is
-;;; a music wake. With bit 6 of the shadow register set, the I/O and the ROM
-;;; of banks $00 and $01 at $C000-$FFFF are off (the game uses the I/O of
-;;; bank $E0 only), so the 65816 takes its vectors from RAM and no firmware
-;;; code runs.
-;;; The handler runs in bank 0 at $DD00 (src/iigs/iigs.scm): cache slots
-;;; $5D00-$5EFF. mkdisk.py loads its
-;;; immutable image below $C000; copyMusicIrq installs it after IOLC.
-;;; The vector needs bank 0, so no jump from hot slots. The ADB path: one push (8-bit
-;;; A), long addresses (D and DBR are those of the interrupted code).
-;;; The main code masks interrupts only in the DOC sequences.
+;;; Service ADB data/mouse reports first, then the DOC alarm on oscillator
+;;; 30. A music wake schedules its next interval before processing commands.
+;;; With music stopped, the handler acknowledges the alarm and exits
+;;; without scheduling another music wake.
+;;;
+;;; IOLC disables bank-$00/$01 I/O and ROM at $C000-$FFFF, exposing the RAM
+;;; vectors and handler. All I/O accesses use bank $E0. mkdisk.py loads the
+;;; handler image below $C000; copyMusicIrq installs it at bank 0 $DD00
+;;; after IOLC is enabled (iigs.scm). This also fixes its cache placement.
+;;; An interrupt inherits D, DBR and register widths from its caller.
+;;; The ADB path uses long addresses; music saves the registers it changes
+;;; and sets DBR to MUSBUF's bank. RTI restores the interrupted status flags.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -81,7 +80,7 @@ irqEntry:     sep     #0x20
 ackAlarm:     lda     #DOC_IRQ
               sta     long:SOUNDADRL
               lda     long:SOUNDDATA        ; the acknowledge
-              lda     long:musOn            ; the music stopped: no new alarm
+              lda     long:musOn            ; stopped: take the no-music exit
               bne     wake
               pla
               rti

@@ -1,7 +1,8 @@
-;;; Using lines in 65816 assembly.
+;;; Trace the player's use action through nearby lines.
 ;;;
-;;; P_UseLines, PTR_UseTraverse and PTR_NoWayTraverse of p_map.c
-;;; with the same results.
+;;; P_UseLines starts the trace; PTR_UseTraverse tests usable specials and
+;;; PTR_NoWayTraverse determines whether a blocking line should produce the
+;;; failed-use sound. Path traversal and intercept ordering live in p_path65.s.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

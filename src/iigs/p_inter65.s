@@ -1,10 +1,9 @@
-;;; Interactions in 65816 assembly.
+;;; Actor pickups, damage and death transitions.
 ;;;
-;;; p_inter.c with the same results: the pickups
-;;; (P_TouchSpecialThing, P_GivePower and the other give functions), the
-;;; damage (P_DamageMobj) and the deaths (P_KillMobj). There is one player
-;;; (_g_player). The constants of the file (initial_health, maxammo, ...)
-;;; stay in C.
+;;; P_TouchSpecialThing and the P_Give* routines apply pickups to _g_player.
+;;; P_DamageMobj changes health and triggers reactions; P_KillMobj handles
+;;; the death state and bookkeeping. Damage may invoke actor actions, so
+;;; callers must preserve live scratch across these calls.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -32,8 +31,8 @@ CLEARCLEAN    .macro  p
 
 PL            .equ    _g_player
 BONUSADD      .equ    6
-PICKUP_SOUND  .equ    0x8000          ; s_sound.h
-AM_ACTIVE     .equ    1               ; am_active, am_map.h
+PICKUP_SOUND  .equ    0x8000          ; bit 15 of sound id: pickup channel
+AM_ACTIVE     .equ    1               ; automapmode bit: map visible
 
               .section znear, bss
 IN_SPECIAL:   .space  4               ; P_TouchSpecialThing: the special thing
@@ -85,7 +84,7 @@ errUnknown:   .asciz  "P_SpecialThing: Unknown gettable thing"
 clipAmmo:     .word   10, 4, 1, 20
 halfClip:     .word   5, 2, 0, 10
 ;;; the tics of each power: INVULNTICS, strength, INVISTICS, IRONTICS,
-;;; allmap, INFRATICS (doomdef.h)
+;;; allmap, infrared; timed powers count down in game tics.
 powerTics:    .word   30 * CONST_TICRATE, 1, 60 * CONST_TICRATE, 60 * CONST_TICRATE
               .word   1, 120 * CONST_TICRATE
 
@@ -793,7 +792,7 @@ thrust:       lda     .near DM_INFL
               sta     .near DM_ANG
               stx     .near (DM_ANG+2)
               lda     .near DM_DAMAGE       ; thrust = damage * 819200 / mass
-              asl     a                     ;   (32 bits, as the C code); the
+              asl     a                     ;   as a 32-bit product; the
               clc                           ;   product is (12 * damage +
               adc     .near DM_DAMAGE       ;   (damage >> 1)) << 16 + (damage
               asl     a                     ;   & 1) << 15, arithmetic shift

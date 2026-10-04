@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Convert DOOM1.WAD for the Apple IIgs build of Doom8088.
+"""Convert DOOM1.WAD into the resident image and level data used by IIgs Doom.
 
-This follows the map and texture conversion of jWadUtil
-(https://github.com/FrenkelS/jWadUtil), but keeps full resolution
-wall patches and sprites, and adds the IIgs color data:
+Convert map records for the runtime layouts, retain full-resolution wall
+patches and sprites, and build the IIgs color data:
 
   GSPAL      5 gamma levels x 14 palettes x 16 SHR colors (little endian $0RGB)
   gspairA.bin / gspairB.bin
@@ -765,7 +764,7 @@ def main():
         # The status bar background becomes a raw 320x32 picture.
         wad.set('STBAR', raw_crop(wad.get('STBAR'), 320, 32))
     else:
-        # Stand-in lumps for the 240x160 GBA layout of Doom8088.
+        # Alternate lump names and cropped pictures for the 240x160 layout.
         for i in range(10):
             wad.add(f'STGANUM{i}', wad.get(f'STTNUM{i}'))
         wad.set('TITLEPIC', raw_scaled(wad.get('TITLEPIC'), 240, 160))

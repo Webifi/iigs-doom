@@ -1,7 +1,10 @@
-;;; Traces through the block map in 65816 assembly.
+;;; Trace traversal through the block map.
 ;;;
-;;; P_AproxDistance, P_PathTraverse and P_TraverseIntercepts of
-;;; p_maputl.c, with the same results.
+;;; P_PathTraverse steps through the blocks crossed by a line and collects
+;;; candidate line/thing intercepts through p_trace65.s. traverse
+;;; then visits them in increasing trace-fraction order until the callback
+;;; stops or the maximum fraction is reached. P_AproxDistance is the shared
+;;; integer distance approximation used by callers.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -177,9 +180,9 @@ P_AproxDistance:
 ;;; The early traversal (a long trace): after each block, the intercepts
 ;;; that no later block can come before already go to trav, so a trace that
 ;;; stops at a near wall does not collect the blocks behind it. The calls
-;;; of trav are the same, in the same order: with more than MAXINTERCEPTS
-;;; intercepts the C code calls trav for none of them, so before the first
-;;; early call the guard proves that the whole trace has no more.
+;;; to trav must remain in distance order. An overflowing trace must make
+;;; no callbacks at all, so the guard proves that the whole trace fits in
+;;; MAXINTERCEPTS before the first early callback can cause side effects.
 ;;; ---------------------------------------------------------------------------
               .public P_PathTraverse
 P_PathTraverse:

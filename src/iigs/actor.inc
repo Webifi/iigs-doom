@@ -27,7 +27,7 @@ LEAVE         .macro
               rtl
               .endm
 
-;;; _Dp[0-3] = AP, the first argument of a C function.
+;;; Copy AP to _Dp[0-3], the first far-pointer argument slot.
 ARGAP         .macro
               lda     dp:.tiny AP
               sta     dp:.tiny _Dp

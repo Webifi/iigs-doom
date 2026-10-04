@@ -1,22 +1,20 @@
-;;; Ensoniq DOC access: the tic timer, the
-;;; alarm of the game interrupt, and the register and RAM access of the
-;;; sound code in src/iigs/s_sound65.s.
+;;; DOC register/RAM access, game-tic clock and interrupt alarm.
 ;;;
-;;; All 32 oscillators run: 0-15 sound effects, 16-29 music, 30 the alarm,
-;;; 31 the timer (the highest one is silent: MAME plays it louder).
-;;; Timer: one silent oscillator scans a 256-byte ramp in DOC RAM, one step
-;;; for each tic. The data register of the oscillator holds the ramp byte
-;;; that it read last, so I_GetTime needs no interrupt.
-;;; Alarm: a silent one-shot oscillator on the same ramp, with its
-;;; interrupt on: it halts and interrupts after ALARM_FREQ steps, and
-;;; the interrupt starts it again (src/iigs/irq65.s).
-;;; Each DOC sequence of the main code masks interrupts: the interrupt also
-;;; uses the GLU.
-;;; Volume: bits 3-0 of the GLU control register are the volume of the
-;;; owner (the Control Panel). The game does not change it.
-;;; IIGS_InitDocVolume reads the system volume ($E100CA) into DOCVOL, and
-;;; each write of the control register uses that value. IIGS_InitDocTimer
-;;; calls it first, and so does the sound shutdown (I_Error can come before).
+;;; The scan configuration enables all 32 oscillators: 0-15 serve sound
+;;; effects, 16-29 music, 30 the alarm and 31 the tic clock. Individual
+;;; oscillators halt when unused; the scan count stays fixed.
+;;; The silent clock scans a 256-byte ramp at roughly 35 steps/second.
+;;; I_GetTime reads its data byte and accumulates the wrapped difference,
+;;; so game time does not depend on servicing an interrupt for every tic.
+;;; The silent alarm scans the same ramp in one-shot mode. Its frequency
+;;; controls the interval; irq65.s acknowledges it and schedules the next wake.
+;;;
+;;; The main code masks interrupts across each address/data sequence because
+;;; the handler shares the GLU ports. The helpers check BUSY before issuing
+;;; dependent GLU accesses.
+;;; IIGS_InitDocVolume copies the system volume at $E100CA into DOCVOL;
+;;; control-register writes retain that low nibble. Initialization and error
+;;; shutdown both load it, since shutdown can run before normal startup.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

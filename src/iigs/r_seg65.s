@@ -1,15 +1,16 @@
-;;; Wall column loop and sprite posts in 65816 assembly.
+;;; Column-record producers for walls, flat planes and sprite posts.
 ;;;
-;;; R_RenderSegLoop, R_DrawSegTextureColumn and R_DrawVisSprite of
-;;; r_draw.c. Walls, floors, ceilings and sprite posts become records in
-;;; the column lists of src/iigs/r_list65.s, which
-;;; R_DrawLists draws at the end of the frame. The loop runs with its own
-;;; direct page (WPAGE) and with the bank of the records as the data bank.
-;;; Near data is read with long addresses.
+;;; R_RenderSegLoop selects a variant from segvar.inc or genColumn;
+;;; drawMid/drawTop/drawBot emit texture tiers, ceilFill/floorFill plane
+;;; spans. R_DrawVisSprite uses visCol/visPost for clipped patch posts.
+;;; All append lists.inc records, which r_list65.s replays into pixels.
+;;; An allocation can flush the lists mid-production.
 ;;;
-;;; A seg gets one of the loops of src/iigs/segvar.inc, made for its tiers
-;;; and plane marks. Masked and sky segs, and columns with a negative floor
-;;; clip, go through genColumn, which does all cases as the C code.
+;;; The wall loop enters with D = WPAGE and DBR = RECBANK. W_* symbols are
+;;; offsets in that direct page, not absolute addresses. Ordinary near-bank
+;;; state therefore needs long addressing until the default D/DBR is restored.
+;;; Specialized loops select the seg's wall tiers and ceiling/floor marks
+;;; once; genColumn handles sky, masked textures and exceptional clip values.
 ;;;
 ;;; The state of the steps: topfrac holds FRACUNIT - 1 more (so its high
 ;;; word is yl), bottomfrac and pixhigh FRACUNIT more (yh + 1, mid + 1),
@@ -45,7 +46,7 @@ VS_HL         .equ    (BSPDP+32)      ; R_DrawVisSprite: hi16(TL * SL), or vis
                                       ;   (MC_CP + 2 of src/iigs/r_sprite65.s,
                                       ;   which columnSetup sets before a read)
 
-COLDIR        .equ    MM_COLDIR       ; COLDIR_ADDR of r_draw.c
+COLDIR        .equ    MM_COLDIR       ; base of the texture-column directory
 RECIP_TABLE   .equ    MM_RECIP        ; see src/iigs/m_recip65.s
 FSTEP_TABLE   .equ    MM_FSTEP        ; see IIGS_InitFstep, src/iigs/m_recip65.s
 SKY_COLOR     .equ    0xfffe          ; ceilingplane_color of a sky ceiling (-2)
@@ -55,7 +56,7 @@ CMAP_B        .equ    34              ; iigs_shrcmapB - iigs_shrcmapA, in pages
 #include "wpage.inc"
 #include "mul.inc"
 
-SKYFRACSTEP   .equ    512             ; FRACUNIT >> COLEXTRABITS, r_sky.c
+SKYFRACSTEP   .equ    512             ; FRACUNIT >> COLEXTRABITS
 SKYTMID7      .equ    100 << 9        ; texturemid (100 << FRACBITS) >> 7
 SL_PADN       .equ    46              ; the pad after the entry of R_RenderSegLoop
 
@@ -274,7 +275,7 @@ MULLO16       .macro  a, b
 80$:
               .endm
 
-;;; The direct page and data bank of the C code, for a call. Destroys C.
+;;; Restore the default D/DBR for a helper call. Destroys 16-bit C.
 CENV          .macro
               phb
               phd
@@ -293,7 +294,7 @@ WENV          .macro
               plb
               .endm
 
-;;; Point _Dp[0-3] at SL_DCV (the direct page of the C code).
+;;; Point the default direct page's _Dp[0-3] at the saved drawer inputs SL_DCV.
 DCVARG        .macro
               lda     ##.word0 SL_DCV
               sta     dp:.tiny _Dp
@@ -558,9 +559,9 @@ segDone:      lda     dp:W_MIDTEX
               pld
               rtl
 
-;;; The loops, by the kind of the seg (2 * it in X at the prologue's JMP).
-;;; The kinds that draw few columns (demo3: v01, v03, v09, v11, v16, v24)
-;;; take genLoop; v02 and v07 are in segmore.
+;;; Dispatch by the seg's tier/plane flags (X = 2 * kind at the JMP).
+;;; Specialized entries remove tests from common column loops; genLoop
+;;; handles the remaining combinations. v02 and v07 live in segmore.
 varTab:       .word   .word0 segDone                               ; two sided: nothing to do
               .word   .word0 genLoop, .word0 v02entry, .word0 genLoop, .word0 v04entry
               .word   .word0 v05entry, .word0 v06entry, .word0 v07entry, .word0 v08entry
@@ -1185,8 +1186,8 @@ ssLoopSites:
 
 
 ;;; ---------------------------------------------------------------------------
-;;; genColumn: column x (X = 2x) with the flags of the seg, as the C code.
-;;; X is kept.
+;;; genColumn: emit column x (X = 2*x) using W_FLAGS to select wall tiers
+;;; and plane spans. Preserves X.
 ;;; ---------------------------------------------------------------------------
 genColumn:    stx     dp:W_X2
               STEP32  W_TF, W_TS            ; yl
@@ -1425,7 +1426,7 @@ solidColumn:  txa
               rts
 
 ;;; skyColumn: the sky in rows W_TOP..W_BOT of column x (X = 2x, kept), as
-;;; R_DrawSky of r_sky.c: the texel column
+;;; selected from texel column
 ;;; (((viewangle >> 16) + xtoviewangle[x]) >> 6) & skywidthmask of the sky
 ;;; patch, texturemid 100 << 16, one texel per row (SKYFRACSTEP), the fixed
 ;;; or the full colormap. The step 256 is a multiple of 64, so the compiled
@@ -1433,7 +1434,7 @@ solidColumn:  txa
 skyColumn:    lda     long:skypatch
               ora     long:(skypatch+2)
               bne     1$
-              brl     skyFlat               ; no sky patch: the C code
+              brl     skyFlat               ; no sky patch: emit the fallback color
 1$:           stx     dp:W_X2
               lda     long:(viewangle+2)   ; the texel column
               clc
@@ -1502,7 +1503,7 @@ skyColumn:    lda     long:skypatch
               ldx     dp:W_X2
               rts
 
-;;; skyFlat: the sky without a patch, with R_DrawSky of the C code.
+;;; skyFlat: emit a solid-color sky span when no sky patch is loaded.
 skyFlat:      txa
               lsr     a
               sta     long:(SL_DCV+OFS_DC_X)
@@ -3203,7 +3204,7 @@ PGT:
 
 ;;; ---------------------------------------------------------------------------
 ;;; needColumns (tierMake): the column tables of texture C (0: none), made
-;;; with R_MakeTextureColumns (r_draw.c) if needed. C code environment.
+;;; with R_MakeTextureColumns if needed. Uses the default D and DBR.
 ;;; ---------------------------------------------------------------------------
               .section halflist, rodata     ; (src/iigs/iigs.scm: the half view)
 ;;; SEGPATCH: the patches of R_SegHalf (src/iigs/r_list65.s): each the
@@ -3449,7 +3450,7 @@ needColumns:  tay
 
 
 ;;; ---------------------------------------------------------------------------
-;;; int16_t R_CheckSegPage(void): 0 if the direct page of the C code has the
+;;; int16_t R_CheckSegPage(void): 0 if the default direct page has the
 ;;; layout that WPAGE needs: at $0900 with the DC_* inputs of the drawers
 ;;; below 0x2c, and the colormaps of the drawers in one bank, B right after
 ;;; A (the K_TEX records of src/iigs/r_list65.s hold only the page of A),
@@ -3482,7 +3483,7 @@ R_CheckSegPage:
 
 ;;; The tangent of the fine angles 2048-3071 (16 bits: the angles near 90
 ;;; degrees below) and 3072-4095 (fixed_t), for the texture column of a
-;;; wall (finetangentTable_part_3 and _part_4 of r_draw.c).
+;;; wall (finetangentTable_part_3 and _part_4).
               .section cnear, rodata
               .public finetangentTable_part_3, finetangentTable_part_4
 finetangentTable_part_3:

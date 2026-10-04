@@ -1,9 +1,8 @@
 ;;; memcpy and memset in 65816 assembly.
 ;;;
-;;; These replace the byte loops of the Calypsi C library (lib_memcpy.o
-;;; and lib_memset.o). They copy and fill a word at a time, from the
-;;; start to the end, with the same results for the engine: no caller
-;;; copies between overlapping buffers.
+;;; Copy and fill words from the start of the buffer, then handle an odd
+;;; trailing byte. memcpy requires non-overlapping source/destination
+;;; ranges; neither routine provides a backward-copy path.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

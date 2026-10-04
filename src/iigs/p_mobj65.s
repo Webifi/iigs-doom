@@ -1,9 +1,10 @@
-;;; Moving things in 65816 assembly.
+;;; Actor movement, missile impact and player wall sliding.
 ;;;
-;;; P_XYMovement, P_ZMovement, P_ExplodeMissile, the wall slide of the
-;;; player (P_SlideMove, PTR_SlideTraverse, P_HitSlideLine) and
-;;; P_MobjIsPlayer of p_mobj.c, and FixedMulAngle of
-;;; r_draw.c, with the same results.
+;;; P_XYMovement applies horizontal momentum and collision handling;
+;;; P_ZMovement handles vertical motion and floor/ceiling limits.
+;;; slideMove traces the blocking wall, and hitSlideLine projects the
+;;; remaining move along it. P_ExplodeMissile handles the impact transition.
+;;; P_MobjIsPlayer and FixedMulAngle are shared helpers for these paths.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -25,7 +26,7 @@
               .extern ticRun, P_MobjThinker
 #endif
 
-MAXMOVE_HI    .equ    30              ; MAXMOVE = 30 * FRACUNIT, p_mobj.c
+MAXMOVE_HI    .equ    30              ; maximum move component: 30 map units
 GRAVITY_HI    .equ    1               ; GRAVITY = FRACUNIT
 
               .section znear, bss

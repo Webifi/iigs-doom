@@ -1,10 +1,12 @@
-;;; The shared state of the renderer in 65816 assembly.
+;;; Renderer state shared across frame production.
 ;;;
-;;; The variables of r_draw.c that several renderer files use (in
-;;; the order of the C file): the drawsegs and their clip lists, the column
-;;; clips of the floors and the ceilings, the view of the frame, the seg that
-;;; R_StoreWallRange (src/iigs/r_wall65.s) sets up for the column loop of
-;;; src/iigs/r_seg65.s, the sprite clips and the vissprites.
+;;; Drawsegs and opening lists retain wall clips for the masked pass.
+;;; floorclip/ceilingclip track each column's remaining vertical opening.
+;;; View globals are fixed by r_frame65.s before the BSP walk; wall globals
+;;; are prepared by r_wall65.s for r_seg65.s. vissprites collects projected
+;;; objects for the later sprite sort and clipping pass.
+;;; These declarations allocate storage; per-frame initialization belongs
+;;; to R_RenderPlayerView and the routines that prepare each wall or sprite.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

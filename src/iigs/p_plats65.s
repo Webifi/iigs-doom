@@ -1,9 +1,9 @@
-;;; Platforms (lifts) in 65816 assembly.
+;;; Platform/lift thinkers and activation.
 ;;;
-;;; p_plats.c with the same results: the plat thinker and
-;;; EV_DoPlat. The C code also keeps a list of the active plats and the tag
-;;; of each plat, which nothing reads: Z_FreeTags clears the head of the
-;;; list before P_RemoveAllActivePlats runs. Here there is no list.
+;;; EV_DoPlat configures a sector's moving platform. The thinker advances
+;;; through moving and waiting states and clears its sector association when
+;;; removed. Platform lifetime is tied to level allocation; there is no
+;;; separate active-platform list to traverse or retain across level teardown.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -19,7 +19,7 @@
               .extern Z_CallocLevSpec, P_FindSectorFromLineTag, IIGS_MulLo16
               .extern P_FindNextHighestFloor, P_FindLowestFloorSurrounding
 
-PLATWAIT      .equ    3               ; p_spec.h
+PLATWAIT      .equ    3               ; wait at an endpoint, in seconds
 
               .section znear, bss
 PL_PLAT:      .space  4               ; the plat thinker

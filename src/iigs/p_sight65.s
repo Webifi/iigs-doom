@@ -1,17 +1,14 @@
-;;; Line of sight checks in 65816 assembly.
+;;; Line-of-sight queries between actors.
 ;;;
-;;; P_CheckSight, P_CrossBSPNode, P_CrossSubsector and P_DivlineSide of
-;;; p_sight.c, with the same results. P_CheckSight sets up los and walks
-;;; the tree. The side tests multiply the whole parts of the coordinates,
-;;; which always fit in 16 bits.
+;;; P_CheckSight rejects sector pairs through REJECT, then walks the BSP
+;;; along the trace in los. Crossed two-sided lines narrow the visible
+;;; height interval; a closed interval or a one-sided line blocks sight.
+;;; Recent-pair results and blocking-line hints can avoid another walk.
 ;;;
-;;; A check runs cold in the cache (other code runs between two checks),
-;;; so it costs about a bus read for each byte of code that it runs, and
-;;; a write stalls on the next miss: the code is small, the walk keeps its
-;;; waiting nodes on the stack instead of calls, one side test (sideTest)
-;;; serves the nodes, the lines and the line of sight with the values in
-;;; registers, the walk reads the nodes, lines and sectors where they are
-;;; (tables of bank 3F give their addresses), and the stores are bytes.
+;;; The walk holds pending nodes on the stack. sideTest serves BSP nodes,
+;;; map lines and the sight trace, multiplying their whole-unit coordinates.
+;;; Tables in MM_B3F resolve indices to the resident node/line/sector data.
+;;; Register-held traversal state and byte stores reduce memory traffic.
 ;;;
 ;;; Address arithmetic assumes sizes 8 (subsector_t), 18 (seg_t),
 ;;; 28 (mapnode_t), 36 (line_t) and 58 (sector_t). Keep these strides
@@ -49,7 +46,7 @@ SVEC          .equ    DC_TI           ; the side passes: where they end (a word)
 
               .section znear, bss
               .public los
-los:          .space  SIZEOF_LOS      ; los_t of p_sight.c
+los:          .space  SIZEOF_LOS      ; active sight trace and vertical interval
 DLN:          .space  8               ; a line as a divline: x, y, dx, dy
 NX            .equ    DLN             ;   (whole units, interceptFrac)
 NY            .equ    (DLN+2)
@@ -121,10 +118,9 @@ MOVE32        .macro  src, dst
 ;;; ---------------------------------------------------------------------------
 ;;; boolean P_CheckSight(mobj_t __far* t1, mobj_t __far* t2)
 ;;; In: _Dp[0-3] = t1, _Dp[4-7] = t2. Out: C.
-;;; P_CheckSight of p_sight.c: the answer of the last pair again,
-;;; REJECT, the same subsector, then the walk of P_CrossBSPNode, which
-;;; first takes the one sided line that stopped the last check of t1, else
-;;; the two sided one (SIGHTHINT).
+;;; Reuse the last pair's answer, test REJECT and the same-subsector case,
+;;; then walk the BSP. Before walking, test the one-sided line that last
+;;; blocked sight for t1, or its two-sided blocking hint (SIGHTHINT).
 ;;; The answers are 0 or 1: CS_PREVR and CS_Z keep their high bytes 0.
 ;;; ---------------------------------------------------------------------------
               .section znear, bss
@@ -1125,9 +1121,8 @@ zSetup:       ldy     ##(OFS_MO_HEIGHT+2)
               rep     #0x20
               rts
 ;;; ---------------------------------------------------------------------------
-;;; interceptFrac: PS_FRAC = P_InterceptVector2(&los.strace, &divl) of
-;;; p_sight.c, divl the line (NX, NY, NDX, NDY) << 16. With
-;;; s = los.strace:
+;;; interceptFrac: compute PS_FRAC, the fraction along los.strace where
+;;; it crosses line (NX, NY, NDX, NDY) in whole map units. With s = los.strace:
 ;;;   num = NDY * (((NX << 16) - s.x) >> 8) + NDX * ((s.y - (NY << 16)) >> 8)
 ;;;   den = ((s.dx * NDY) >> 8) - ((s.dy * NDX) >> 8)
 ;;;   0 if num == 0 or den >> 12 == 0, else (num << 4) / (den >> 12)

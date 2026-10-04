@@ -1,19 +1,16 @@
-;;; Movement clipping in 65816 assembly.
+;;; Position checks, movement and spatial-list ownership.
 ;;;
-;;; P_CheckPosition, P_TryMove, PIT_CheckLine, PIT_GetSectors and
-;;; P_CreateSecNodeList of p_map.c, and P_PointOnLineSide,
-;;; P_BoxOnLineSide, P_LineOpening, P_UnsetThingPosition,
-;;; P_SetThingPosition and the block map iterators of p_maputl.c,
-;;; with the same results and the same side effects.
+;;; P_CheckPosition tests a candidate location against block-map things
+;;; and lines, recording floor/ceiling limits and touched specials in tm*.
+;;; P_TryMove uses those results to commit a move; P_TeleportMove handles
+;;; placement with telefrag checks. P_SetThingPosition/P_UnsetThingPosition
+;;; maintain block/sector membership, including the shared sector nodes.
 ;;;
-;;; Also PIT_CheckThing, P_TeleportMove, PIT_StompThing and the sector
-;;; nodes (P_AddSecnode, P_DelSecnode, P_DelSeclist) of p_map.c.
-;;;
-;;; C code that these routines call can run game logic again (a missile
-;;; hits a monster, which then moves), so state that must live across a
-;;; C call is on the stack or in the callee-saved _Dp[8-19].
-;;; Lumps and zone blocks never cross a bank, so 16-bit pointer
-;;; arithmetic gives the same addresses as the C code.
+;;; Collision callbacks can reenter movement code: a missile can damage
+;;; an actor whose action moves again. Preserve live state across those
+;;; calls on the stack or in the callee-saved _Dp[8-19]; tm* is shared.
+;;; Lumps and zone blocks never cross a bank, so these routines update
+;;; pointer offsets with 16-bit arithmetic while retaining the bank byte.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -47,8 +44,8 @@ CLEARCLEAN    .macro  p
 
 ;;; The block rows: y * _g_bmapwidth for each row of the blockmap, and
 ;;; the lines: _g_lines + 36 * n for each line number n (P_InitBlockRows),
-;;; for the walks instead of a multiply. Bank 3F after the sight tables
-;;; (src/iigs/p_sight65.s).
+;;; to avoid multiplication during a walk. These allocations share MM_B3F
+;;; with the sight tables in p_sight65.s.
 BMROW         .equ    (MM_B3F + 0x6000)
 BMROW_MAX     .equ    0x100           ; (the rows and columns of a map)
 LN36          .equ    (MM_B3F + 0x6200)
@@ -167,7 +164,7 @@ PQMUL         .macro
               .endm
 
               .section znear, bss
-;;; the globals of p_map.c
+;;; Active position-query state; callbacks can replace it through nested moves.
               .public tmthing, tmx, tmy, _g_tmbbox, _g_tmfloorz, _g_tmceilingz
               .public _g_tmdropoffz, _g_ceilingline, _g_spechit, _g_numspechit
               .public _s_sector_list, _g_linetarget, LR_OK
@@ -1287,7 +1284,8 @@ setBox:       ldy     ##(OFS_MO_FLAGS+2)    ; MP_TMF (tCheck): bit 15 the thing 
               .space  65                    ; (the code after keeps its address)
 
 ;;; ---------------------------------------------------------------------------
-;;; boxOnLineSide: A = P_BoxOnLineSide(MP_TB, WK_LN) in C: 0, 1, or -1 when
+;;; boxOnLineSide: return the side of box MP_TB relative to line WK_LN:
+;;; A = 0 or 1 for one side, or -1 when
 ;;; the box crosses the line (for P_BoxOnLineSide: it returns with RTL).
 ;;; ---------------------------------------------------------------------------
 boxOnLineSide:
@@ -1611,7 +1609,7 @@ tCheck:       lda     long:MP_TMF           ; (a word: bit 15 the missile)
               sta     dp:.tiny (WK_BL+1)
               lda     .near (_g_blocklinks+2)
               sta     dp:.tiny (WK_BL+2)
-              jsr     .kbank loadRad        ; the C code reads tmthing again
+              jsr     .kbank loadRad        ; reload tmthing after callbacks
               lda     #0xff                 ; (the radii again)
               sta     dp:.tiny WK_PR
               pla                           ; X = the thing, DBR = its bank
@@ -1636,7 +1634,7 @@ tFalse:       TEND
               .space  3                     ; (the code after keeps its address)
 tDone:        TEND
 
-              ;; the lines; C code above can change tmthing. The sector of
+              ;; Line checks: thing callbacks above can change tmthing. The sector of
               ;; P_TryMove first: game logic that goes on with the walk only
               ;; picks up things, which changes no tmx, tmy or floor.
 lines:        lda     .near MP_TRY
@@ -2124,22 +2122,21 @@ pointSector:  lda     .near tmy             ; _Dp = y (words: no SEP and REP)
 ;;; ---------------------------------------------------------------------------
 ;;; The sector nodes. The free nodes are in a list (SN_FREE, linked by
 ;;; m_tnext); when it is empty, a pool of SN_POOL nodes comes from
-;;; Z_CallocLevel. (The C code uses the block allocator of
-;;; z_bmallo.c: the same nodes in the same lists at other
-;;; addresses.)
+;;; Z_CallocLevel. Deleting a node unlinks it from the thing and sector
+;;; lists, then returns it to SN_FREE for reuse within this level.
 ;;; ---------------------------------------------------------------------------
 SN_POOL       .equ    32
 
 ;;; ---------------------------------------------------------------------------
-;;; pointOnLineSide: A = P_PointOnLineSide(x, y, WK_LN) in C, 0 or 1, for
+;;; pointOnLineSide: A = side 0 or 1 of (x, y) relative to line WK_LN, for
 ;;; the point x = MP_TB + PXO, y = MP_TB + PYO (near fixed_t; PXO and PYO
 ;;; bytes of the direct page). No calls: it ends at PVEC (posPub for
 ;;; P_PointOnLineSide, the corners of slanted).
 ;;;   !dx ? x <= v1.x << 16 ? dy > 0 : dy < 0 :
 ;;;   !dy ? y <= v1.y << 16 ? dx < 0 : dx > 0 :
 ;;;   ((y - (v1.y << 16)) >> 8) * dx >= dy * ((x - (v1.x << 16)) >> 8)
-;;; The products are the 32-bit products of the C code (posMul; the first
-;;; waits in MP_T1).
+;;; posMul computes each signed 32-bit product; MP_T1 holds the first
+;;; while the second is evaluated.
 ;;; ---------------------------------------------------------------------------
 pointOnLineSide:
               ldy     ##OFS_LINE_DX
@@ -3591,7 +3588,7 @@ stompThing:   lda     dp:.tiny _Dp          ; not tmthing
 8$:           rtl
 
 ;;; farFrom: N clear if |the fixed_t at offset Y of the thing _Dp[0-3] -
-;;; the fixed_t at near X| >= MP_T1, a signed compare as the C code.
+;;; the fixed_t at near X| >= MP_T1, using a signed comparison.
 farFrom:      lda     [.tiny _Dp],y
               sec
               sbc     abs:0,x

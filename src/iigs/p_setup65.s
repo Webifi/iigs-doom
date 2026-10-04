@@ -1,10 +1,10 @@
-;;; The level setup in 65816 assembly.
+;;; Load a map and establish its runtime objects and lookup tables.
 ;;;
-;;; p_setup.c with the same results: the map lumps become the level
-;;; data (lines, sides, sectors and subsectors in the zone; segs, nodes,
-;;; blockmap and reject in place in the WAD), each sector gets its lines
-;;; and a sound origin in the middle of their box, then the things spawn.
-;;; The Z_Free calls for lumps (which do nothing) are gone.
+;;; Lines, sides, sectors and subsectors are allocated in the zone. Segs,
+;;; nodes, blockmap and reject data remain in the loaded WAD/level window.
+;;; Each sector receives its line list and a sound origin at the center of
+;;; the lines' bounding box, then map things are spawned. Pointers into the
+;;; loaded set are valid only while that set occupies the level window.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

@@ -1,9 +1,8 @@
-;;; The player in 65816 assembly.
+;;; Per-tic player movement and view state.
 ;;;
-;;; p_user.c with the same results: P_PlayerThink with the
-;;; movement, the view height and bobbing, the death view and the special
-;;; sectors. There is one player, so the player_t* argument is always
-;;; &_g_player, and the code uses _g_player directly.
+;;; P_PlayerThink applies the tic command, movement, view height/bobbing,
+;;; death view and special-sector effects. There is one player; routines
+;;; use _g_player directly. Weapon sprite state updates are in p_pspr65.s.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

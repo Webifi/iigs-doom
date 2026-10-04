@@ -1,8 +1,9 @@
-;;; Hitscan attacks in 65816 assembly.
+;;; Hitscan aiming and damage along a trace.
 ;;;
-;;; P_AimLineAttack, P_LineAttack, their traversers PTR_AimTraverse and
-;;; PTR_ShootTraverse, FixedMul3, P_ShootSpecialLine and
-;;; P_IsAttackRangeMeleeRange of p_map.c, with the same results.
+;;; P_AimLineAttack uses PTR_AimTraverse to narrow the visible vertical range
+;;; and select a target. P_LineAttack uses PTR_ShootTraverse to apply the shot
+;;; to the first blocking wall or actor. P_ShootSpecialLine handles shootable
+;;; line specials; FixedMul3 and P_IsAttackRangeMeleeRange supply shared math.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

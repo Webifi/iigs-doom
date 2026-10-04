@@ -1,10 +1,16 @@
 ;;; Startup, text console, keyboard and exit in 65816 assembly.
 ;;;
-;;; i_iigs.c with the same results: main and the math tables, the
-;;; 40 column text console with a printf for it (the formats that the game
-;;; uses: %s, %c, %d, %i, %u, the l forms and a precision), I_Quit and
-;;; I_Error. The key events of I_StartTic come from the ADB keyboard, not
-;;; from the keyboard register of i_iigs.c.
+;;; main initializes the platform and math tables before D_DoomMain.
+;;; The console implements only the printf formats used by the game:
+;;; %s, %c, %d, %i, %u, the l forms and a precision. I_Quit/I_Error restore
+;;; the machine state needed to return to firmware.
+;;;
+;;; Input boundary: I_StartTic consumes iigs_adbq, whose bytes use ADB key
+;;; identities and bit 7 for release. iigs_asm.s produces these bytes.
+;;; This file owns bindings, held-key counts,
+;;; tap retention and menu repeat; producers do not emit Doom actions.
+;;; Several physical keys can bind to one action, so a release must update
+;;; keyCount rather than unconditionally release that action.
 ;;; A timedemo build gives the demo name to D_DoomMain (TIMEDEMO_N of the
 ;;; Makefile), so there is no argument list.
 

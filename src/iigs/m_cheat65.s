@@ -1,9 +1,8 @@
-;;; The cheats in 65816 assembly.
+;;; Incremental cheat-key matching and cheat actions.
 ;;;
-;;; m_cheat.c with the same results: each cheat sequence follows
-;;; the keys, and a key that does not match starts it again (without a
-;;; new match). The first cheat of the table that completes works; the
-;;; cheats after it do not see the key.
+;;; Each sequence retains its current match position. A mismatch resets that
+;;; sequence without trying the same key again as a new start. The first
+;;; completed entry handles the key; entries after it do not see that key.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -15,7 +14,7 @@
               .extern P_GivePower, G_ExitLevel
 
 PL            .equ    _g_player
-GOD_HEALTH    .equ    100             ; the rules of p_inter.c: the health
+GOD_HEALTH    .equ    100             ; cheat grants: health
 IDFA_ARMOR    .equ    200             ;   of iddqd, the armor of idfa and
 IDFA_ARMOR_CLASS .equ 2               ;   idkfa
 NUMCHEATS     .equ    15

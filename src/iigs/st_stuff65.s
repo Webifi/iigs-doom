@@ -123,13 +123,12 @@ nmFaces:      .asciz  "STFST00", "STFST01", "STFST02", "STFTR00", "STFTL00"
               .asciz  "STFOUCH4", "STFEVL4", "STFKILL4"
               .asciz  "STFGOD0", "STFDEAD0"
 nmEnd:
-;;; the rows of the ammo counts by ammo type (am_clip, am_shell, am_misl,
-;;; am_cell of doomdef.h): AMMO0 to AMMO3 of the C code
+;;; Ammo-count rows in type order: bullets, shells, rockets, cells.
 ammoRows:     .word   ST_Y+5, ST_Y+11, ST_Y+17, ST_Y+23
 
 ;;; ---------------------------------------------------------------------------
-;;; void ST_Init(void): the lump numbers of the bar, and the start values
-;;; of the statics of the C code.
+;;; void ST_Init(void): resolve status-bar lump numbers and initialize
+;;; cached widget values used to detect changes between redraws.
 ;;; ---------------------------------------------------------------------------
               .section farcode, text
               .public ST_Init

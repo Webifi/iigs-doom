@@ -1,7 +1,8 @@
-;;; Teleporters in 65816 assembly.
+;;; Teleport line specials.
 ;;;
-;;; p_telept.c with the same results. P_TeleportMove is in
-;;; src/iigs/p_map65.s.
+;;; EV_Teleport finds the tagged destination and asks P_TeleportMove
+;;; (p_map65.s) to place the actor there. Collision/telefrag handling belongs
+;;; to that move routine; this file handles the teleport's facing and effects.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

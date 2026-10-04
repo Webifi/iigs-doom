@@ -6,7 +6,7 @@
 ;;; pixel odd row. iigs_rowpageL and iigs_rowpageR give the page of the
 ;;; table for each screen row and pixel side, so the table index of a
 ;;; pixel is page << 8 | Doom color. The tables are made by I_BuildNibtab
-;;; and I_SetRows in i_viigs.c.
+;;; and I_SetRows in i_viigs65.s.
 
               .rtmodel version, "1"
               .rtmodel core, "*"

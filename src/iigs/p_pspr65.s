@@ -1,9 +1,9 @@
-;;; Weapons of the player in 65816 assembly.
+;;; Player weapon states, action functions and attacks.
 ;;;
-;;; p_pspr.c with the same results: the weapon sprite states and
-;;; their action functions, weapon changes, ammunition, the noise alert and
-;;; the attacks. There is one player, so the player_t* arguments are
-;;; always &_g_player, and the code uses _g_player directly.
+;;; Weapon sprites have their own state transitions for raising, lowering,
+;;; readying, firing and muzzle flash. This module handles weapon selection,
+;;; ammunition use and attack/noise dispatch. There is one player, so these
+;;; routines access _g_player directly rather than following a player argument.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -1227,7 +1227,7 @@ tickPsprite:  lda     abs:OFS_PSP_STATE,x
 9$:           rts
 
 ;;; The weapons (weapontype_t order): the ammo, then the states to raise,
-;;; lower, hold ready, fire and flash (weaponinfo_t of d_items.c).
+;;; lower, hold ready, fire and flash. Each entry contains six words.
               .section cnear, rodata
               .public weaponinfo
 weaponinfo:   .word   CONST_AM_NOAMMO, CONST_S_PUNCHUP, CONST_S_PUNCHDOWN

@@ -11,11 +11,12 @@
 ;;; angle16_t R_PointToAngle16(int16_t x, int16_t y)
 ;;; In: C = x, _Dp[0-1] = y. Out: C.
 ;;; pointAngle: the same with y in Y, for jsr from the code of the BSP.
-;;; The angle of (x, y) seen from (viewx, viewy), as in r_draw.c: the point
-;;; is flipped into the first octant and tantoangle gives the angle of
+;;; The angle of (x, y) seen from (viewx, viewy): the point is folded into
+;;; the first octant and tantoangle gives the angle of
 ;;; SlopeDiv16(small, big) = min(small * SLOPERANGE / big, SLOPERANGE).
 ;;; When x and y from the view are in -16384..16384, the compares of the
-;;; octants are plain and slopeT divides; else pointOld does as r_draw.c.
+;;; octants use direct comparisons and slopeT divides. Outside that range,
+;;; pointOld handles the signed comparisons and wrapped coordinate values.
 ;;; Destroys X, Y and _Dp[4-7].
 ;;; ---------------------------------------------------------------------------
               .extern viewx, viewy, _UDivMod32
@@ -273,8 +274,8 @@ gr100:        tay
 PA_PAD:       .space  PA_PADN
 
 ;;; pointOld: pointAngle for x in X and y in Y from the view, not both in
-;;; -16384..16384 (only when the coordinates wrap), as in r_draw.c. Cold
-;;; code: jsl, rtl (so the hot code of the BSP stays in place).
+;;; -16384..16384. Handles wrapped 16-bit differences with signed compares.
+;;; Lives in coldcode; enter with JSL and return with RTL.
               .section coldcode, text
 pointOld:     txa
               bpl     2$
@@ -383,7 +384,7 @@ slopeOld:     ldx     dp:.tiny PA_DEN
               lda     abs:.near (tantoangleTable+2),x
               rts
 
-              ;; n > d (only when the coordinates wrap): the C code in full
+              ;; Wrapped coordinates can give n > d: use the full division.
 80$:          tay
               xba
               and     ##0x00ff
@@ -415,10 +416,10 @@ slopeOld:     ldx     dp:.tiny PA_DEN
 
 ;;; ---------------------------------------------------------------------------
 ;;; fixed_t R_ScaleFromGlobalAngle(int16_t x)       In: C. Out: X:C.
-;;; fixed_t R_FixedApproxDiv(fixed_t a, fixed_t b)  a in SG_NUM, b in SG_DEN.
-;;; The functions of r_draw.c, with the same results. (R_PointToDist went:
-;;; R_StoreWallRange of src/iigs/r_wall65.s finds the distance of a wall
-;;; from the view as a dot product.)
+;;; Scale a wall at screen column x using its normal, perpendicular
+;;; distance and the view ray angle. Clamp the 16.16 result to 256..64<<16.
+;;; approxDiv forms the ratio through reciprocal tables; SG_NUM/SG_DEN
+;;; hold its numerator/denominator and SG_NUM also receives the result.
 ;;; ---------------------------------------------------------------------------
               .extern xtoviewangleTable, viewangle16, rw_normalangle, rw_distance
               .extern finesineapprox, finecosineapprox, _Mul32, _Mul16, _UDivMod32
@@ -529,9 +530,9 @@ R_ScaleFromGlobalAngle:
               ldx     .near (SG_NUM+2)
               rtl
 
-;;; sineLow: C = finesineapprox(C) for C < 4096, which is a table value
-;;; (finesineTable_part_1 of tables.c, read as the C code reads
-;;; it, also for C < 0); _Dp[4-5] = C.
+;;; sineLow: quarter-table lookup for signed fine angle C < 4096.
+;;; Mirror 2048..4095 to 2047..0; negative inputs retain their wrapped
+;;; 16-bit byte offset. Return the word in C and _Dp[4-5].
 sineLow:      cmp     ##2048                ; C < 2048, signed: [C]
               bmi     1$
               eor     ##4095                ; 2048 <= C < 4096: [4095 - C]
@@ -556,7 +557,7 @@ FixedApproxDiv:
 ;;; approxDiv: X:C = SG_NUM = FixedApproxDiv(SG_NUM, SG_DEN):
 ;;;   b <= 0xffff ? FixedMul3232(a, FixedReciprocalSmall(b))
 ;;;               : FixedMul3216(a, FixedReciprocalBig(b))
-;;; (a signed compare in C, so a negative b is small)
+;;; The comparison is signed, so negative b also selects the small table.
 approxDiv:    lda     .near (SG_DEN+2)
               beq     5$
               bpl     10$
@@ -582,7 +583,8 @@ approxDiv:    lda     .near (SG_DEN+2)
 ;;; ---------------------------------------------------------------------------
 ;;; subsector_t __far* R_PointInSubsector(fixed_t x, fixed_t y)
 ;;;   In: X:C = x, _Dp[0-3] = y. Out: X:C.
-;;; The function of r_draw.c, with the same results, and its R_PointOnSide.
+;;; Follow the child selected by each partition-side test until a leaf
+;;; index is reached, then convert that index to a subsector pointer.
 ;;; ---------------------------------------------------------------------------
               .extern nodes, numnodes, _g_subsectors
               .extern MA, MB, MR, umul16, umul16lo
@@ -878,7 +880,7 @@ walk:         tax
               bmi     90$
               bra     91$
 
-              ;; (y >> 8) * dx >= (x >> 8) * dy, low 32 bits as in C
+              ;; (y >> 8) * dx >= (x >> 8) * dy, retaining each product's low 32 bits
 50$:          ldx     ##.near PO_YP
               lda     .near PO_NDX
               jsl     long:shiftMul
@@ -913,8 +915,8 @@ walk:         tax
 ;;; ---------------------------------------------------------------------------
 ;;; angle_t R_PointToAngle3(fixed_t x, fixed_t y)
 ;;; In: X:C = x, _Dp[0-3] = y. Out: X:C.
-;;; The C version of r_draw.c: the game logic uses it, so the
-;;; results are the same. SlopeDiv(num, den) = (uint16_t)((num << 3) /
+;;; Full-coordinate angle lookup used by game logic. Preserve the shifts
+;;; and quotient truncation: SlopeDiv(num, den) = (uint16_t)((num << 3) /
 ;;; (den >> 8)), at most SLOPERANGE. When the quotient is below 4096 (always
 ;;; when num <= den), 12 division steps give it; else _UDivMod32 does.
 ;;; ---------------------------------------------------------------------------
@@ -1138,7 +1140,7 @@ slopeDiv3:    lda     .near P3_D
 31$:          rts
 
 ;;; The angle of each slope (2049 slopes 0-1: y * 2048 / x), for
-;;; R_PointToAngle (tantoangleTable of r_draw.c).
+;;; the angle lookup routines above (tantoangleTable).
               .section cnear, rodata
               .public tantoangleTable
 tantoangleTable:

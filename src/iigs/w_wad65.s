@@ -1,13 +1,12 @@
 ;;; The WAD directory in 65816 assembly.
 ;;;
-;;; w_wad.c with the same results. The disk loader puts the resident WAD
-;;; (tools/levelimg.py: the directory of all lumps and the lumps of every
-;;; map) in RAM at WAD_ADDR; no lump crosses a 64 KB bank, so a lump is used
-;;; in place at WAD_ADDR + filepos (a lump below WAD_ADDR has a filepos that
-;;; wraps). The lumps of a map come into the level window at its start, and
-;;; the level loader (src/iigs/w_level65.s) sets their filepos. The
-;;; directory (fileinfo) is also used in place. W_GetNumForName finds a
-;;; name through the hash chains lumphash and lumpnext.
+;;; The disk loader places the directory and resident lumps at WAD_ADDR.
+;;; A lump is used in place at WAD_ADDR + filepos and never crosses a
+;;; 64 KB bank. Lumps below WAD_ADDR use a wrapping filepos offset.
+;;; Map-specific lumps occupy the level window; w_level65.s updates their
+;;; directory offsets when loading a map. Those addresses remain valid
+;;; only until that window is reused. The directory (fileinfo) stays resident.
+;;; W_GetNumForName resolves names through lumphash/lumpnext hash chains.
 
               .rtmodel version, "1"
               .rtmodel core, "*"
@@ -286,8 +285,8 @@ W_IsLumpCached:
 ;;; ---------------------------------------------------------------------------
 ;;; void W_ReadLumpByNum(int16_t num, void __far* ptr)
 ;;;   In: C = num, _Dp[0-3] = ptr.
-;;; The lump to ptr; an odd size copies one byte more (as the XMS copy of
-;;; z_zone.c).
+;;; Copy the lump to ptr, rounding its byte count up to an even number.
+;;; The destination must allow one padding byte when the lump size is odd.
 ;;; ---------------------------------------------------------------------------
               .public W_ReadLumpByNum
 W_ReadLumpByNum:

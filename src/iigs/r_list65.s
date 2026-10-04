@@ -1,12 +1,17 @@
 ;;; The column lists of the 3D view.
 ;;;
-;;; Each frame, the walls, floors, ceilings, sprites, masked walls and
-;;; shadows of the 3D view become records in the lists of their columns
-;;; (lists.inc). R_DrawLists draws all lists at the end of the frame, column
-;;; by column, with SHR shadowing on. The screen keeps the frame before
-;;; while the new one is made, and then gets the new frame in one pass. The
-;;; drawers do the slow screen writes while the accelerator goes on with
-;;; their register work.
+;;; Producers append lists.inc records instead of drawing each span at
+;;; once. R_DrawLists replays the pending lists column by column with SHR
+;;; shadowing enabled; each buffered screen store overlaps the following
+;;; register work and cached reads. newPage can also force an early replay
+;;; when the record pool fills, so this is not an atomic frame-buffer swap.
+;;;
+;;; Allocation uses DBR = RECBANK and a column index of 2 * column. Replay
+;;; uses DBR = BUF_BANK for screen stores and long addresses for records.
+;;; COLW is an end pointer, not a count; K_NEXT links pages within a list.
+;;; A replay empties the lists and returns their pages to the shared pool.
+;;; flush saves live producer scratch before that nested replay; the final
+;;; frame replay can reuse it directly because production has finished.
 ;;;
 ;;; RECBANK is bank $1D (memmap.inc), within the cached address range.
 ;;; COLPAGE skips pages whose cache slots hold the direct pages and replay
@@ -73,7 +78,7 @@ RL_CE:        .space  2               ; the end of the list after the cut
 ;;; column of the lists, the first row of a record, the row after its last,
 ;;; its first half row and the half row after its last, the fill bytes of the
 ;;; even and odd rows, the step and the position (TF, TI) of a texture
-;;; record (drawer inputs of the C code that the lists do not use; a flush
+;;; record (default drawer inputs that the lists do not use; a flush
 ;;; keeps them, RL_SAVE).
 RL_HC         .equ    RL_I
 RL_HA         .equ    RL_OD
@@ -303,8 +308,10 @@ newPage:      sep     #0x20
               tay
               rtl
 
-;;; flush: all lists drawn now (no extra page left). The direct page and the
-;;; drawer inputs of the caller stay.
+;;; Flush the pool while a producer is suspended inside allocation.
+;;; Save D/DBR and the default direct page's first $2C bytes here;
+;;; flushReplay separately saves RS_SF/RS_SI, which alias later producer
+;;; scratch. Restore both groups before newPage returns to the producer.
 flush:        phb
               phd
               lda     ##.word0 _DirectPageStart
@@ -472,9 +479,9 @@ recStart:     pha
 ;;; ---------------------------------------------------------------------------
 ;;; The drawers of the rare kinds: from the table of drawAll, with Y = the
 ;;; record; back to done with X = the next record. 8-bit A, 16-bit X, Y,
-;;; DBR = BUF_BANK, the direct page of the drawers. Own cache slots (listfuzz,
-;;; listovl): in coldcode they shared slots with texBlocks, and a spectre
-;;; column and a texture column pushed each other out (-6 ms a spectre frame).
+;;; DBR = BUF_BANK, the direct page of the drawers. listfuzz/listovl have
+;;; separate cache slots from texBlocks: neighboring texture and fuzz
+;;; records can execute alternately, so their code must not evict each other.
 ;;; ---------------------------------------------------------------------------
               .section listfuzz, text
 
@@ -547,8 +554,7 @@ drawOvl:      tyx
 ;;; The replay: in its own cache slots (section hotlist, src/iigs/iigs.scm),
 ;;; away from the direct pages, the stack, the colormaps and the hot data.
 ;;; void R_DrawLists(void): all lists (drawAll), then SHR shadowing off (the
-;;; end of the 3D view). The direct page is the one of the drawers (the C
-;;; code).
+;;; end of the 3D view). D must select the default drawer direct page.
 ;;; ---------------------------------------------------------------------------
               .section hotlist, text
 R_DrawLists:  jsr     .kbank drawSel
@@ -1632,7 +1638,7 @@ hcvEnd:       lda     #255
 ;;; R_RenderPlayerView). R_SegHalf: the patches SEGPATCH of
 ;;; src/iigs/r_seg65.s with the bytes of the full view (C = 0) or of the half
 ;;; view (C = 1): the half view takes the even columns only. 16-bit A, X, Y;
-;;; the direct page of the C code (its drawer inputs are free then).
+;;; the default direct page (its drawer inputs are free then).
 ;;; ---------------------------------------------------------------------------
 segMode:      lda     .near AM_MODE         ; the automap overlay on the half
               cmp     ##3                   ;   view ended: its pixels go
@@ -2211,7 +2217,7 @@ R_ViewMode:   php
               rtl
 ;;; tPatch: the patches SEGPATCHT of src/iigs/r_seg65.s with the bytes of
 ;;; the full view (X = 3) or of the 2/3 view (X = 6), as R_SegHalf. 16-bit
-;;; A, X, Y; the direct page of the C code.
+;;; A, X, Y; the default direct page.
 tPatch:       stx     dp:.tiny DC_FRAC
               sep     #0x20
               lda     #.byte2 R_RenderSegLoop ; (the bank of the patches)

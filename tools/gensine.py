@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write sine.bin: finesine(x) then finecosine(x) of Doom8088 for x =
+"""Write sine.bin: finesine(x) then finecosine(x) for x =
 0..8191, as 32-bit little endian values (64 KB). Used by finesine and
 finecosine in src/iigs/tables65.s.
 
