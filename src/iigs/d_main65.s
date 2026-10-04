@@ -20,6 +20,7 @@
 #include "wpage.inc"
 
               .extern _Dp, printf, FixedApproxDiv, IIGS_MulLo16
+              .public keyboardTicCall, keyboardBuildCall
               .extern W_NextDemo
               .extern I_GetTime, I_TimeWait, I_StartTic, I_InitKeyboard, IIGS_InitDocTimer, I_InitSound
 #if TICSTEP > 1
@@ -223,7 +224,9 @@ print:        stx     dp:.tiny _Dp
 doomLoop:     PHASE   1
               lda     .near singletics
               beq     2$
-              jsl     long:I_StartTic
+ ; j13SetMode patches both this JSL and keyboardBuildCall together.
+keyboardTicCall .equ 91$
+91$:          jsl     long:I_StartTic
               jsl     long:G_BuildTiccmd
 #if TICSTEP > 1
               lda     ##1
@@ -236,10 +239,15 @@ doomLoop:     PHASE   1
               bra     3$
 2$:           jsr     .kbank tryRunTics
 3$:           PHASE   8
-              jsl     long:musFrame         ; a part of a song's load, the
-              bra     4$                    ;   positional sounds
-              .space  6                     ; (the size of the old code: no
-4$:                                           ;   code of the game moves)
+              jsl     long:musFrame         ; Advance music loading and positional sound.
+ ; Eight-byte frame hook: normally BRA +6; raw-input mode may install JML
+ ; J13EscapeCheck. Its return skips all eight bytes, even if opening a menu
+ ; restores the BRA during the call. Keep the slot and continuation fixed.
+              .public J13EscapeSite
+J13EscapeSite:
+              bra     4$
+              .space  6
+4$:
 displayCall:  jsr     .kbank display
               lda     ##1
               sta     .near iigs_newframe
@@ -366,9 +374,11 @@ buildNewTiccmds:
 #if TICSTEP > 1
               lda     .near NT_TIC          ; the keys up to its tic
               inc     .near NT_TIC
-              jsl     long:I_StartTicUntil
+keyboardBuildCall .equ 92$
+92$:          jsl     long:I_StartTicUntil
 #else
-              jsl     long:I_StartTic
+keyboardBuildCall .equ 92$
+92$:          jsl     long:I_StartTic
 #endif
               jsl     long:G_BuildTiccmd
               inc     .near maketic
@@ -740,8 +750,12 @@ D_AdvanceDemo:
               lda     ##1
               sta     .near advancedemo
               rtl
-D_StartTitle: stz     .near _g_gameaction   ; (ga_nothing)
-              lda     ##0xffff
+              .extern J13TitleStart
+ ; The wrapper selects menu input, clears gameaction and returns at +6
+ ; with A = $FFFF for the demosequence store. Preserve this six-byte slot.
+D_StartTitle: jmp     long:J13TitleStart
+              nop
+              nop
               sta     .near demosequence
               bra     D_AdvanceDemo
 

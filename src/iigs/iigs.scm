@@ -146,8 +146,12 @@
             (section logiccode))
     (memory Code4c2 (address (#x043e00 . #x043fff))
             (section coldcode))
-    (memory Code4d (address (#x044000 . #x045fff))
+    (memory Code4d (address (#x044000 . #x045d7f))
             (section farcode cfar far))
+    ;; Fixed keyboard transition entries and menu dispatch table. Their
+    ;; wrappers resume displaced instructions without moving the hot code.
+    (memory J13Cold (address (#x045d80 . #x045fff))
+            (section (j13cold #x045d80)))
     (memory Code4d0 (address (#x046000 . #x0466ff))
             (section coldcode))
     (memory Code4d1 (address (#x046700 . #x046bff))
@@ -157,9 +161,10 @@
     ;; tables of the shot tics do not use.
     (memory GuardCode (address (#x046c00 . #x046dff))
             (section guardcode))
-    ;; The ENDOOM page of the exit (tools/endtext.py) first: read once.
-    (memory Code4d2 (address (#x046e00 . #x0488ff))
-            (section (endtext #x046e00) farcode cfar far))
+    ;; ENDOOM is read only at exit. The keyboard adapter has a fixed start
+    ;; after it; its instruction offsets and cache placement must stay stable.
+    (memory Code4d2 (address (#x046e00 . #x0486cf))
+            (section (endtext #x046e00) (stealthcode #x047500) farcode cfar far))
     (memory Code4e (address (#x048900 . #x049fff))
             (section coldcode))
     (memory Code4f (address (#x04a000 . #x04bdff))
@@ -170,8 +175,18 @@
     ;; the BSP code and the game logic use them, the masked pass does not.
     (memory MaskCode (address (#x04c000 . #x04c7ff))
             (section (maskcode #x04c000)))
-    (memory Code4g (address (#x04c800 . #x04ffff))
+    (memory Code4g (address (#x04c800 . #x04eca1))
             (section vwcode (uicode #x04d64a) (vw3code #x04e100) (fourui #x04ec90) farcode cfar far))
+    ;; Menu-only text and glyphs occupy the unused tail of bank 4.
+    (memory J13Menu (address (#x04eca2 . #x04eeff))
+            (section (j13ui #x04eca2)))
+    ;; Menu-only keyboard detection, outside the gameplay reader.
+    (memory J13Auto (address (#x04ef00 . #x04ffff))
+            (section (j13auto #x04ef00)))
+    ;; Column/IRQ row-reader continuations share bank 4 with stealthcode;
+    ;; their near calls and DBR-relative state accesses require that bank.
+    (memory J13Pump (address (#x0486d0 . #x0488ff))
+            (section (j13pump #x0486d0)))
     (memory Code5a (address (#x050000 . #x0508ff))
             (section farcode data_init_table cfar far))
     (memory Code5b (address (#x050900 . #x050aff))

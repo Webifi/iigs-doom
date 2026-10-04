@@ -595,6 +595,11 @@ pairBeginDone:
               sta     dp:.tiny RL_CV0P
               lda     #0
               sta     dp:.tiny RL_I
+ ; The J13 row reader temporarily replaces four bytes here with a JML,
+ ; replays STA/ASL/XBA in its wrapper, then resumes at +4. hcol uses the same
+ ; slot shape; narrow views patch at entry+2 to replay XBA/LDA #0/XBA instead.
+              .public J13ColumnSite
+J13ColumnSite:
 col:          sta     dp:.tiny RL_C         ; c = the next column, left to right
               asl     a                     ;   (A = the index RL_I, 8 bits), X =
               xba                           ;   2c: bit 8 of 2c into B, as TAX
@@ -1205,6 +1210,7 @@ spBeginDoneH:
               lda     #255                  ; no cut
               sta     dp:.tiny RL_CV0P
               lda     #0
+              .public hcol
 hcol:         sta     dp:.tiny RL_HC        ; c = the next column, left to right
               asl     a                     ; X = 2c (TAX copies B: no REP/SEP
               xba                           ;   a column)
@@ -1763,6 +1769,7 @@ spBeginDoneT:
               lda     #255                  ; no cut
               sta     dp:.tiny RL_CV0P
               lda     #0
+              .public tcol
 tcol:         sta     dp:.tiny RL_HC        ; c = the next column
               xba                           ; X = c (TAX copies B = 0: no
               lda     #0                    ;   REP/SEP a column)
@@ -2351,6 +2358,7 @@ spBeginDoneO:
               lda     #255                  ; no cut
               sta     dp:.tiny RL_CV0P
               lda     #0
+              .public ocol
 ocol:         sta     dp:.tiny RL_HC        ; c = the next column
               xba                           ; X = c (TAX copies B = 0: no
               lda     #0                    ;   REP/SEP a column)
@@ -3356,6 +3364,7 @@ spBeginDoneQ:
               lda     #255                  ; no cut
               sta     dp:.tiny RL_CV0P
               lda     #0
+              .public qcol
 qcol:         sta     dp:.tiny RL_HC        ; c = the next column
               xba                           ; X = c (TAX copies B = 0: no
               lda     #0                    ;   REP/SEP a column)
@@ -3927,6 +3936,7 @@ spBeginDoneU:
               lda     #255                  ; no cut
               sta     dp:.tiny RL_CV0P
               lda     #0
+              .public ucol
 ucol:         sta     dp:.tiny RL_HC        ; c = the next column
               xba                           ; X = c (TAX copies B = 0: no
               lda     #0                    ;   REP/SEP a column)

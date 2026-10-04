@@ -38,7 +38,8 @@
               .extern snd_SfxVolume, snd_MusicVolume
               .extern S_SetSfxVolume, S_SetMusicVolume
               .extern I_MenuPalette, I_MenuPaletteBack, message_on
-              .extern uiOpen
+              .extern uiOpen, J13Toggle, j13Enabled
+              .public menuNum
 
 PL            .equ    _g_player
 EV_DATA1      .equ    2               ; event_t (type 0: ev_keydown)
@@ -122,6 +123,7 @@ currentMenu:  .space  2
 itemOn:       .space  2
 skullAnimCounter: .space 2
 whichSkull:   .space  2
+              .public menuversion
 menuversion:  .space  2
 skullversion: .space  2
 fontLumpOffset: .space 2
@@ -571,9 +573,8 @@ itemRoutine:
               .word   .word0 changeMouseSpeed
               .word   .word0 changeMouseMove
               .word   .word0 controls
-menuDraw:     .word   .word0 drawMain, .word0 drawNewGame, .word0 drawLoad
-              .word   .word0 drawOptions, .word0 drawControls, .word0 drawSave
-              .word   .word0 drawOptions, .word0 drawOptions, .word0 drawOptions
+              .word   .word0 changeJ13
+              .space  16                    ; Keep later entries fixed; menuDraw is in j13cold.
 
 ;;; ---------------------------------------------------------------------------
 ;;; void M_Init(void): the main menu, no message; the lumps of the patches
@@ -1047,7 +1048,8 @@ changeMouseMove:
               sbc     .near iigs_mousemove
               sta     .near iigs_mousemove
               rts
-              .space  5               ; Keep later coldcode entries fixed.
+changeJ13:    jsl     long:J13Toggle
+              rts
 vwItem:       jsl     long:bmItem           ; BENCHMARK, SAVE SETTINGS
               rts
 changeMouseSpeed:
@@ -1713,6 +1715,8 @@ bmBox:        sta     dp:.tiny (_Dp+2)      ; (the mode)
 
 ;;; bmWrite: draw the string at X:C at (MT_X, MT_Y); advance MT_X.
 bmWrite:      pei     dp:.tiny (_Dp+8)
+bmMenuGlyphLookup .equ 2$
+bmMenuGlyphReady .equ 21$
               pei     dp:.tiny (_Dp+10)
               sta     dp:.tiny (_Dp+8)
               stx     dp:.tiny (_Dp+10)
@@ -1722,11 +1726,8 @@ bmWrite:      pei     dp:.tiny (_Dp+8)
               beq     9$
               iny
               phy
-              cmp     ##'a'                 ; (upper case)
-              bcc     2$
-              cmp     ##('z' + 1)
-              bcs     2$
-              sbc     ##('a' - 'A' - 1)     ; (carry clear)
+              jmp     .kbank bmMenuGlyph    ; Label-specific glyph, then rejoin font lookup/draw.
+              .space  10                    ; Preserve later menu entries.
 2$:           cmp     ##HU_FONTSTART
               bcc     4$
               cmp     ##(HU_FONTEND + 1)
@@ -1735,7 +1736,7 @@ bmWrite:      pei     dp:.tiny (_Dp+8)
               jsl     long:W_GetLumpByNum   ; the patch, its width
               sta     dp:.tiny (_Dp+4)
               stx     dp:.tiny (_Dp+6)
-              lda     [.tiny (_Dp+4)]       ; (OFS_PATCH_WIDTH 0)
+21$:          lda     [.tiny (_Dp+4)]       ; (OFS_PATCH_WIDTH 0)
               pha
               lda     .near MT_Y
               sta     dp:.tiny _Dp
@@ -2983,7 +2984,7 @@ uiSettings:   pei     dp:.tiny (_Dp+8)
               lda     long:UI_VALUE
               cpx     ##20
               bcs     4$
-              ldx     ##.word0 uiOff
+99$:          ldx     ##.word0 uiOff
               cmp     ##0
               beq     2$
               ldx     ##.word0 uiOn
@@ -2995,7 +2996,9 @@ uiSettings:   pei     dp:.tiny (_Dp+8)
               ldy     ##284
               jsr     .kbank uiAlign
               bra     6$
-4$:           cpx     ##20
+4$:           cpx     ##48                  ; J13 is an on/off item.
+              beq     99$
+              cpx     ##20
               beq     3$
               cpx     ##44                  ; TWGS SLOW IRQ: OFF or CARD
               bne     5$
@@ -3004,7 +3007,7 @@ uiSettings:   pei     dp:.tiny (_Dp+8)
               beq     2$
               ldx     ##.word0 uiCard
               bra     2$
-              .space  14              ; Keep later uicode entries fixed.
+              .space  9               ; Keep later uicode entries fixed.
 5$:           lda     long:UI_VALUE
               cpx     ##36
               bcs     51$
@@ -3125,6 +3128,8 @@ uiLRom:       .asciz  "ROM"
 ;;; Menu counts, item offsets, layout and parent selections.
 ;;; Retain the old SOUND slots so later item indices stay fixed (the SOUND item
 ;;; of OPTIONS went: TWGS SLOW IRQ takes its place in the item tables).
+; INPUT starts with five items; installProbe exposes its sixth J13 row
+; only on supported ROMs. Parallel item/label/kind tables include that row.
 menuNum:      .word   6, 5, 8, 5, 11, 8
 ; VIEW, GAMMA and SFX share a page; music adds its row when enabled. With a
 ; TransWarp GS the page has TWGS SLOW IRQ as its last row (bmTwStart).
@@ -3143,6 +3148,7 @@ menuPrevItem: .word   0, 0, 2, 1, 4, 3, 1, 1, 2
 itemStatus:   .word   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
               .word   2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
               .word   1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1
+              .word   2                    ; J13 / IIe KEYBOARD
 itemLump:     .word   L_NGAME, L_OPTION, L_LOADG, L_SAVEG, L_QUITG, L_QUITG
               .word   L_JKILL, L_JKILL+2, L_JKILL+4, L_JKILL+6, L_JKILL+8
               .word   0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
@@ -3151,6 +3157,7 @@ itemLump:     .word   L_NGAME, L_OPTION, L_LOADG, L_SAVEG, L_QUITG, L_QUITG
               .word   0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
               .word   0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
               .word   0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
+              .word   0xffff
 uiTitles:     .word   0, 0, 0, .word0 uiOptions, 0, 0, .word0 uiVideo
               .word   .word0 uiSound, .word0 uiInput
 uiLabels:     .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -3160,13 +3167,16 @@ uiLabels:     .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   .word0 uiLView, .word0 uiGamma, .word0 uiSfx
               .word   .word0 uiMusic, .word0 uiTwirq, .word0 uiRun, .word0 uiMouse
               .word   .word0 uiSpeed, .word0 uiMove, .word0 uiKeys
+              .word   .word0 j13MenuLabel
 uiKinds:      .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   0, 0, 0, 0, 0, 20, 28, 36, 40, 44, 8, 12, 32, 16, 0
+              .word   48
 uiValues:     .long   0, showMessages, _g_alwaysRun, iigs_mouseon
 ; Unused kind 24 keeps the reserved detailimg fragment linked.
               .long   iigs_mousemove, VW_SIZE, menuDetailPad, _g_gamma
               .long   iigs_mousespeed, snd_SfxVolume, snd_MusicVolume, VW_TWIRQ
+              .long   j13Enabled
 uiOptions:    .asciz  "OPTIONS"
 uiMessages:   .asciz  "MESSAGES"
 uiVideo:      .asciz  "DISPLAY & SOUND"
@@ -3197,3 +3207,10 @@ uiSizesEnd:
               .section fourui, text
 uiQuarter: .asciz "1/4 SIZE"
 uiThreequarter: .asciz "3/4 SIZE"
+
+              .section j13cold, text
+menuDraw:     .word   .word0 drawMain, .word0 drawNewGame, .word0 drawLoad
+              .word   .word0 drawOptions, .word0 drawControls, .word0 drawSave
+              .word   .word0 drawOptions, .word0 drawOptions, .word0 drawOptions
+
+#include "j13label.inc"

@@ -6,9 +6,11 @@
 ;;; the machine state needed to return to firmware.
 ;;;
 ;;; Input boundary: I_StartTic consumes iigs_adbq, whose bytes use ADB key
-;;; identities and bit 7 for release. iigs_asm.s produces these bytes.
-;;; This file owns bindings, held-key counts,
-;;; tap retention and menu repeat; producers do not emit Doom actions.
+;;; identities and bit 7 for release. Producers are in iigs_asm.s and the
+;;; optional keyboard adapter. Both use the same identity space: keyStamp
+;;; does not distinguish a J13 key from the equivalent ADB key. This file
+;;; owns bindings, held-key counts, tap retention and menu repeat; producers
+;;; do not emit Doom actions.
 ;;; Several physical keys can bind to one action, so a release must update
 ;;; keyCount rather than unconditionally release that action.
 ;;; A timedemo build gives the demo name to D_DoomMain (TIMEDEMO_N of the
@@ -21,7 +23,7 @@
 #include "tics.inc"
 
               .extern _Dp, D_DoomMain, D_PostEvent
-              .extern IIGS_StartKeys, IIGS_StopKeys, IIGS_ResetSystem, IIGS_StopInterrupts
+              .extern IIGS_SelectKeyboard, IIGS_StopStealth, IIGS_ResetSystem, IIGS_StopInterrupts
               .extern bmAccelOff, bmAccelBack
               .extern iigs_adbq, iigs_adbqhead, iigs_adbqtail
 #if TICSTEP > 1
@@ -119,6 +121,7 @@ textRowOffset: .word  0x000, 0x080, 0x100, 0x180, 0x200, 0x280, 0x300, 0x380
 KEYDEF        .macro  key, char
               .word   (\char << 8) | \key
               .endm
+              .public keyDefaults
 keyDefaults:
               KEYDEF  KEY_STRAFELEFT, 'a'     ; $00 A
               KEYDEF  KEY_DOWN, 's'           ; $01 S
@@ -340,7 +343,7 @@ shutdown:     lda     .near isGraphicsModeSet
               stz     .near isGraphicsModeSet
 1$:           jsl     long:IIGS_StopInterrupts
               jsl     long:I_ShutdownSound
-              jsl     long:IIGS_StopKeys
+              jsl     long:IIGS_StopStealth
               jsl     long:bmAccelBack      ; (the TWGS setting, IIGS_ZipBack)
               rts
 
@@ -704,7 +707,7 @@ I_InitKeyboard:
               dex
               bpl     2$
               stz     .near iigs_bindwait
-              jsl     long:IIGS_StartKeys
+              jsl     long:IIGS_SelectKeyboard
               rtl
 
 ;;; I_StartTic: the key events of the key bytes in iigs_adbq. An ADB key is

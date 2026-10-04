@@ -2041,13 +2041,14 @@ tintSpan:     lda     .near curtint
 ;;; gray copy; closing restores all pixels, row mappings and palettes.
               .section uicode, text
               .public I_MenuPalette, I_MenuPaletteBack, uiOpen, uiDisplay
-              .extern sqmInit
+              .extern sqmInit, J13MenuOpen, J13MenuClose
               .extern displayCall, display, menuDisplayNear, onlyTics
               .extern uiStaticCheck, uiStaticDrawn, M_Drawer, singletics
 
-;;; Select the cold menu display while open. The normal call costs the
-;;; same as before; both near targets stay in the display's code bank.
-uiOpen:       lda     long:(displayCall+1)
+;;; Select the menu input reader before changing the display. J13MenuOpen
+;;; replays the displaced displayCall load and returns at uiOpen+4. Both
+;;; display targets stay in the display call's bank; preserve this entry slot.
+uiOpen:       jmp     long:J13MenuOpen
               cmp     ##.word0 menuDisplayNear
               beq     1$
               lda     .near singletics
@@ -2147,8 +2148,10 @@ uiDimAll:     stz     .near VP_Y0
 
 ;;; Restore before clearMenus releases the pause. A changed gamma takes
 ;;; effect on the next game draw, after the original screen is back.
+;;; J13MenuClose selects gameplay input, then replays the UI_SINGLETIC load
+;;; and returns at +4; the store below still restores the saved tic mode.
 I_MenuPaletteBack:
-              lda     long:UI_SINGLETIC
+              jmp     long:J13MenuClose
               sta     .near singletics
               lda     ##.word0 display
               sta     long:(displayCall+1)

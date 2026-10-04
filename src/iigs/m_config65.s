@@ -12,6 +12,7 @@
 ;;;        the music volume 0-15, the mouse, the mouse speed 0-9, the mouse
 ;;;        moves, the detail (0 high, 1 low), the view size (VW_SIZE), the
 ;;;        TWGS SLOW IRQ (VW_TWIRQ: 0 OFF, 1 CARD; 0 in older files)
+;;;        and J13 gameplay input (0 OFF, 1 ON; 0 in older files)
 ;;;        (1 byte each)
 ;;;   32   the Doom key of each ADB key code 0-127 (NOKEY: none)
 ;;;   160  the saved games (F_SLOTS, src/iigs/g_game65.s)
@@ -24,7 +25,7 @@
 
               .extern _Dp, _g_gamma, _g_alwaysRun, showMessages
               .extern iigs_mouseon, iigs_mousespeed, iigs_mousemove, detailLevel
-              .extern R_SetDetail
+              .extern R_SetDetail, J13SettingsInit, J13SettingsCollect
               .extern snd_SfxVolume, snd_MusicVolume, S_SetSfxVolume, S_SetMusicVolume
               .extern keyTable, bmSave, bmSaved, W_NeedDisk
 PAD_WF        .equ    67              ; (the checks that W_NeedDisk does went)
@@ -91,9 +92,10 @@ magic:        .ascii  "DOOMSET"
 diskMagic:    .ascii  "DOOMGS"          ; the disk header
 
 ;;; ---------------------------------------------------------------------------
-;;; void I_InitSettings(void): the file and BOOTINFO from the loader, before
-;;; the game uses bank 0 there. It also sets VW_TWIRQ from the file (OFF if the
-;;; file is not valid): bmAccelOff needs it, and it runs before G_LoadSettings.
+;;; Copy the loader's settings and BOOTINFO before their bank-0 space is
+;;; reused. Initialize VW_TWIRQ before bmAccelOff and j13Enabled before input
+;;; selection. Invalid files default both off; the final J13SettingsInit
+;;; wrapper receives checkFile's carry and the normalized TWGS value in A16.
 ;;; ---------------------------------------------------------------------------
               .section coldcode, text
               .public I_InitSettings
@@ -115,7 +117,7 @@ I_InitSettings:
               bcs     3$
               lda     long:(settingsFile+F_TWIRQ)
               jsr     .kbank flag
-3$:           sta     long:VW_TWIRQ
+3$:           jmp     long:J13SettingsInit
               rtl
 
 ;;; ---------------------------------------------------------------------------
@@ -283,8 +285,8 @@ collect:      ldx     ##F_VERSION - 1
               sta     long:(settingsFile+F_DETAIL)
               lda     long:vwStored         ; 0 until the player picks a size
               sta     long:(settingsFile+VW_FVSIZE)
-              lda     long:VW_TWIRQ
-              sta     long:(settingsFile+F_TWIRQ)
+              jsl     long:J13SettingsCollect ; A8: pack bytes 22/23 before checksum.
+              .space  4,0xea
               rep     #0x20
               ldx     ##0                   ; the Doom key of each ADB key
 2$:           phx

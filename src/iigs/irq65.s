@@ -2,8 +2,8 @@
 ;;;
 ;;; Service ADB data/mouse reports first, then the DOC alarm on oscillator
 ;;; 30. A music wake schedules its next interval before processing commands.
-;;; With music stopped, the handler acknowledges the alarm and exits
-;;; without scheduling another music wake.
+;;; The no-music exit also provides patch sites for the optional keyboard
+;;; sampler, which can keep the alarm active while music is stopped.
 ;;;
 ;;; IOLC disables bank-$00/$01 I/O and ROM at $C000-$FFFF, exposing the RAM
 ;;; vectors and handler. All I/O accesses use bank $E0. mkdisk.py loads the
@@ -70,6 +70,11 @@ irqOn:        .space  2               ; not 0: the interrupt runs
               .section irqcode, text
 irqEntry:     sep     #0x20
               pha
+              .public J13StatusSite
+; The row reader patches the AND operand at +5 to zero while it owns
+; controller DATA. Patches must also reach the image at address - $2200,
+; which copyMusicIrq reinstalls after disk I/O. The LDA never consumes DATA.
+J13StatusSite:
               lda     long:KMSTATUS
               and     #KM_WAITING
               bne     adbByte
@@ -82,12 +87,18 @@ ackAlarm:     lda     #DOC_IRQ
               lda     long:SOUNDDATA        ; the acknowledge
               lda     long:musOn            ; stopped: take the no-music exit
               bne     wake
-              pla
+              .public J13SilentExit, J13SilentTrampoline
+; In raw/menu mode this is PLA/RTI. Armed gameplay replaces it with BRA
+; to J13SilentTrampoline: the sampler must pop this 8-bit A before RTI.
+J13SilentExit: pla
               rti
 adbByte:      pla
               jsl     long:IIGS_PollKeys
 noEntry:      rti                           ; (also BRK, COP, ABORT and NMI)
 ramMode:      brl     irqRegMode            ; register mode (irqcold)
+              .public J13SilentBranchWord
+J13SilentBranchWord .equ 0x80 + (J13SilentTrampoline-J13SilentExit-2)*256
+J13SilentTrampoline:
               .space  5                     ;   (the code after it keeps its address)
 
 ;;; ---------------------------------------------------------------------------
@@ -129,7 +140,10 @@ wake:         xba
               lda     #ALARM_CONTROL        ; a halted one-shot counts again
               sta     long:SOUNDADRL
               lda     #ALARM_CTL
-              sta     long:SOUNDDATA
+              .public J13AlarmSite
+; Armed gameplay replaces these four bytes with JML J13MusicLatch. The
+; wrapper performs this store first, preserves X/Y/B/DBR, then resumes next.
+J13AlarmSite: sta     long:SOUNDDATA
 next:         lda     abs:MB_STREAM,y
               cmp     #0xd0
               bcs     done

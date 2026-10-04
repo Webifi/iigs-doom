@@ -42,6 +42,8 @@ iigs_adbqtail: .space 2                 ; the next byte out (I_StartTic)
               .public iigs_adbt
 iigs_adbt:    .space  (2 * ADBQ_SIZE)   ; the tic (I_GetTime) of each byte
 #endif
+              .public adbHalt, mouseUp
+              .public adbTalk
 adbTalk:      .space  2                 ; 1: a Talk is out
 adbHalt:      .space  2                 ; 1: no more Talks (IIGS_StopKeys)
 adbByte:      .space  2                 ; the last byte from the ADB
@@ -351,6 +353,7 @@ IIGS_MouseUp: php
 
               .section farcode, text
               .public IIGS_StartKeys, IIGS_StopKeys, IIGS_ResetSystem
+              .extern IIGS_StopStealth
 IIGS_StartKeys:
               php
               sei
@@ -398,7 +401,7 @@ IIGS_StopKeys:
 
 IIGS_ResetSystem:
               jsl     long:IIGS_StopInterrupts
-              jsl     long:IIGS_StopKeys
+              jsl     long:IIGS_StopStealth
               sep     #0x20
               lda     #ADB_RESETSYS
               jsr     .kbank adbSend

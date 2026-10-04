@@ -643,6 +643,7 @@ victory:      jsl     long:W_StartFinale  ; (F_StartFinale with its pictures)
 
 ;;; doLoadLevel: G_DoLoadLevel: a wipe from a level, the level of gamemap,
 ;;; the keys up, the status bar and messages.
+              .extern J13LevelStart, J13DemoStart
 doLoadLevel:  lda     .near wipegamestate   ; from a level: a wipe
               bne     1$
               lda     ##0xffff
@@ -664,7 +665,7 @@ doLoadLevel:  lda     .near wipegamestate   ; from a level: a wipe
               dex
               bpl     3$
               jsl     long:ST_Start
-              jsl     long:HU_Start
+              jsl     long:J13LevelStart   ; HU_Start, then select this level's input mode.
               rts
 
 ;;; ---------------------------------------------------------------------------
@@ -1268,7 +1269,7 @@ doPlayDemo:   lda     .near defdemoname     ; ExtractFileBase: from the end
               stz     .near _g_usergame
               lda     ##1
               sta     .near _g_demoplayback
-              jsl     long:I_GetTime
+              jsl     long:J13DemoStart    ; Select demo input; return I_GetTime in X:A.
               sta     .near starttime
               stx     .near (starttime+2)
               rts
