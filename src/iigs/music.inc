@@ -46,7 +46,7 @@ MB_LOW        .equ    0x04b0          ; 2: the song's lowest DOC page
 MB_PSWAP      .equ    0x04b2          ; 2: the map whose plan with its song is
                                       ;   in PLANS (src/iigs/s_sound65.s), 0: none
 MB_PVALID     .equ    0x04b4          ; 2: not 0: MB_PLANS holds those plans
-MB_READY      .equ    0x04b6          ; 2: the song + 1 that musLoad put in place (not started), or 0
+MB_READY      .equ    0x04b6          ; 2: loaded/muted song + 1 ready to start, or 0
 MB_IMAGE      .equ    0x0500          ; the song image: u8 descriptors, u8
 MB_STREAM     .equ    0x0506          ;   pitches, u16 stream length, u8 the
                                       ;   lowest DOC page, u8 feature flags, the stream,

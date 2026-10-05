@@ -70,6 +70,10 @@
     ;; and the core16rows source image.
     (memory MusCode (address (#x009d40 . #x00a4ff))
             (section muscode))
+    ;; Song/volume transition code, not song storage. MUSBUF and the song's
+    ;; DOC pages retain the muted image; no additional buffer is allocated here.
+    (memory MusResident (address (#x00ab00 . #x00aeff))
+            (section (musresident #x00ab00)))
     ;; c19Install saves the displaced small-view code here before copying
     ;; full-view kernels into its slots; c19Restore puts it back on a mode
     ;; change. Accessed during mode installation, not column rendering.

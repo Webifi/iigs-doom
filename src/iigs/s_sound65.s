@@ -1331,7 +1331,13 @@ snd_MusicVolume: .word 12             ; leave headroom for the sound effects
 ;;; Music (tools/musbank.py; the player is the game interrupt of
 ;;; src/iigs/irq65.s; the layout of MUSBUF is src/iigs/music.inc). Songs are
 ;;; numbered as in the bank: 0-8 E1M1-E1M9, 9 INTER, 10 INTRO, 11 VICTOR,
-;;; 12 INTROA. Music volume 0 stops song playback and its music wakes.
+;;; 12 INTROA. musWant is the requested song; musCur identifies the image.
+;;; musPend means that image is still loading; musOn enables IRQ playback.
+;;; MB_READY = musCur+1 publishes a complete song ready to start, including
+;;; a muted song. Starting clears MB_READY; muting playback restores it.
+;;; Volume zero halts voices and music wakes while retaining a complete
+;;; image in MUSBUF and its samples in DOC RAM. Retention keeps the smaller
+;;; SFX pool; musStop instead releases those pages and invalidates readiness.
 ;;; ---------------------------------------------------------------------------
 ;;; Keep these tables and the reserved coldcode footprint together: changing
 ;;; the section size shifts later code into different accelerator cache slots.
@@ -1382,8 +1388,9 @@ cacheWalk:    cpx     .near SS_END
               lda     .near USECOUNT
               sec
               sbc     long:secondLastUse,x
-              ;; Only a song's smaller pool uses second-reference frequency
-              ;; weighting. Music off keeps ordinary unweighted last-use age.
+              ;; A song's smaller pool uses second-reference frequency
+              ;; weighting, including while muted. Only a full-size pool
+              ;; uses ordinary unweighted last-use age.
               cmp     ##0x1000
               bcc     weightedScale
               lda     ##0xffff
@@ -1567,9 +1574,11 @@ I_InitSound2: php
               lda     .near snd_MusicVolume
               jmp     long:S_SetMusicVolume
 
-;;; void S_SetMusicVolume(int16_t volume)   In: C = 0-15.
-;;; The volume table (the attenuation of DMX for the volume, musAtt); 0:
-;;; the music stops (no alarm), a volume again: a looping song plays again.
+;;; A16 = volume, masked to 0-15; preserves the caller's register widths.
+;;; Zero mutes and retains a completed song. Raising it rebuilds attenuation
+;;; and restarts the wanted looping song if neither playing nor loading.
+;;; Restart begins at the stream's start, not the old playback position;
+;;; non-looping title music does not restart through the volume slider.
 S_SetMusicVolume:
               php
               rep     #0x30
@@ -1580,7 +1589,7 @@ S_SetMusicVolume:
               and     ##0x00ff
               cmp     ##0x00ff
               bne     1$
-              jsr     .kbank musStop
+              jsr     .kbank musMute
               plp
               rtl
 1$:           jsr     .kbank setVolume
@@ -1596,7 +1605,7 @@ S_SetMusicVolume:
               beq     2$
               rep     #0x20
               and     ##0x00ff
-              jsr     .kbank musPlay
+              jsr     .kbank musRestore
 2$:           plp
               rtl
 
@@ -1664,9 +1673,10 @@ setVolume:    sta     long:(MUSBUF+MB_T0)   ; k = i + C
               bcc     1$
               rts
 
-;;; musNewMap (S_Start, before the plan of the map): a new map stops the
-;;; song, so the plan gets all DOC pages (the same map again: the song goes
-;;; on, as S_ChangeMusic of Doom does). 16-bit A, X, Y.
+;;; Called by S_Start before loadPlan, with A/X/Y16. A changed map releases
+;;; the old song unless MB_READY marks a preloaded/retained image. musWillPlay
+;;; selects the music-compatible SFX plan when that image owns DOC pages,
+;;; even at zero volume. The same map can keep its current playback.
 musNewMap:    lda     .near _g_gamemap
               cmp     ##(PLAN_MAPS + 1)     ; (the map of loadPlan)
               bcc     1$
@@ -1678,10 +1688,10 @@ musNewMap:    lda     .near _g_gamemap
               bne     4$                    ;   the new map stays)
               jsr     .kbank musStop
 4$:           pla
-2$:           jsr     .kbank musWillPlay    ; the map's plan with its song in
-              cmp     long:(MUSBUF+MB_PSWAP) ;  PLANS if the song will play (a
-              beq     9$                    ;   song leaves too few pages for
-              pha                           ;   sounds that stay: all a pool)
+2$:           jsr     .kbank musWillPlay    ; Select by DOC ownership, not volume alone.
+              cmp     long:(MUSBUF+MB_PSWAP)
+              beq     9$
+              pha                           ; Restore the old plan before swapping a new one in.
               lda     long:(MUSBUF+MB_PSWAP)
               beq     3$
               jsr     .kbank planSwap       ; the plan without the song back
@@ -1691,16 +1701,18 @@ musNewMap:    lda     .near _g_gamemap
               jsr     .kbank planSwap
 9$:           rtl
 
-;;; musWillPlay: C = map (0-9) if its song will play (music volume, an 8 MB
-;;; bank with the song, the plans with the songs), else 0. 16-bit A, X, Y.
+;;; A16 in = map 0-9; out = that map if a music-compatible plan is needed,
+;;; else 0. X/Y scratch. With valid music plans, MB_READY reserves song pages
+;;; regardless of volume; otherwise nonzero volume and an available 8 MB
+;;; bank entry are required. The caller pairs the preloaded song with its map.
 musWillPlay:  tay
               beq     9$
               lda     long:(MUSBUF+MB_PVALID)
               beq     8$
+              lda     long:(MUSBUF+MB_READY) ; A muted resident song still owns its pages.
+              bne     7$
               lda     .near snd_MusicVolume
               beq     8$
-              lda     long:(MUSBUF+MB_READY) ; its unit in place (musLoad)
-              bne     7$
               lda     long:(MUS_RAMMAP + (MUSBANK >> 19))
               and     ##(1 << ((MUSBANK >> 16) & 7))
               beq     8$
@@ -1760,11 +1772,11 @@ musLevel:     ldy     ##1                   ; a map's song loops
               lda     ##MUS_NONE
               bra     S_ChangeMusic2
 
-;;; void S_ChangeMusic(int16_t musicnum), S_StartMusic   In: C = the music
-;;; of Doom (mus_e1m1 = 1, ..., mus_inter = 28, mus_intro, mus_bunny,
-;;; mus_victor, mus_introa); the song plays unless it plays already. As in
-;;; Doom, S_StartMusic plays it once (the title page), S_ChangeMusic again
-;;; at its end.
+;;; A16 = music id (maps 1-9, intermission 28, intro 29, victory 31,
+;;; alternate intro 32). S_StartMusic requests one play; S_ChangeMusic loops.
+;;; S_ChangeMusic2 takes the translated bank id and Y = loop flag. A request
+;;; already playing/loading continues. At zero volume, musMuteWanted retains
+;;; only a completed image of the requested song; another request discards it.
 S_StartMusic: ldy     ##0
               bra     musChange
 S_ChangeMusic:
@@ -1805,7 +1817,7 @@ S_ChangeMusic2:
               jsr     .kbank musPlay
               plp
               rtl
-8$:           jsr     .kbank musStop
+8$:           jsr     .kbank musMuteWanted
 9$:           plp
               rtl
 
@@ -1894,9 +1906,9 @@ musSource:    lda     dp:.tiny _Dp
               adc     ##255
               sta     long:(MUSBUF+MB_ULEFT)
               jsr     .kbank musEvict
-              ;; the sound effects stay below: the pool there, the 64 pages
-              ;; under the song (the plan of the map knows no music: with
-              ;; the music off it is the game's own)
+              ;; Reserve effects space below the song. If the current plan
+              ;; leaves less than MUS_POOL pages, lower POOL_LO (at least 0).
+              ;; Keep these bounds while the song is retained at zero volume.
               lda     long:(MUSBUF+MB_LOW)
               sta     .near POOL_HI
               sec
@@ -2022,14 +2034,14 @@ musPart:      lda     long:(MUSBUF+MB_HLEN)
 4$:           sec
               rts
 
-;;; musLoad (the level loader: at the end of W_LoadSet of a map, and in the
-;;; title's loading screen): the song unit for music id A (mus_e1m1 =
-;;; 1, mus_inter = 28, mus_intro = 29) at Y:X (the image tools/music/mussc.py
-;;; writes: head, DOC part) into MUSBUF and DOC RAM before it returns (the
-;;; loader reuses that RAM); it starts at S_ChangeMusic of that music (at
-;;; once if the game wants it already), or at musGo. Nothing at music volume
-;;; 0 (a raise waits for the next level's unit). Keeps D, B, _Dp[0-7]; A, X,
-;;; Y change.
+;;; Synchronous level/title load: A16 = music id, Y:X = staged song unit
+;;; (header/stream/tables followed by DOC samples). Finish copying to MUSBUF
+;;; and DOC RAM before return because songFinish clears/reuses the staging
+;;; space. Retain both at zero volume; do not reserve a second sample copy.
+;;; Publish MB_READY only after the entire unit loads. musLoaded may start
+;;; it immediately if wanted and audible; otherwise S_ChangeMusic/musGo or
+;;; a later volume change starts it. SFX remain below its DOC sample range.
+;;; Preserves P, D, DBR and _Dp[0..7]; A/X/Y are scratch.
 musLoad:      php
               rep     #0x30
               pei     dp:.tiny (_Dp+6)
@@ -2039,8 +2051,7 @@ musLoad:      php
               stx     dp:.tiny _Dp
               sty     dp:.tiny (_Dp+2)
               tax
-              lda     .near snd_MusicVolume
-              beq     8$
+              .space  5,0xea               ; Muted songs must remain available too.
               cpx     ##33                  ; (musOfDoom: 33 musics)
               bcs     8$
               lda     long:musOfDoom,x
@@ -2064,11 +2075,8 @@ musLoad:      php
               and     ##0x00ff
               inc     a
               sta     long:(MUSBUF+MB_READY) ; in place, not started
-              lda     long:musWant          ; the music the game wants already:
-              and     ##0x00ff              ;   it starts now
-              cmp     long:musCur
-              bne     8$
-              jsr     .kbank musGo2
+              jsr     .kbank musLoaded
+              .space  13,0xea               ; Keep the player and interrupt entries fixed.
 8$:           pla
               sta     dp:.tiny _Dp
               pla
@@ -2096,6 +2104,8 @@ musGo:        php
               jsr     .kbank musGo2
 9$:           plp
               rtl
+;;; Consume readiness before enabling playback. musStart resets MB_SPTR and
+;;; voice state, so the same retained image can restart without another load.
 musGo2:       lda     ##0
               sta     long:(MUSBUF+MB_READY)
               jmp     .kbank musStart       ; (its RTS: back to our caller)
@@ -2321,7 +2331,10 @@ musAlarm:     lda     #3
               lda     #0x0a                 ; one-shot, interrupt on, running
               jmp     .kbank musSet
 
-;;; musStop: no song plays: no alarm, the voices halted. 16-bit A, X, Y.
+;;; A/X/Y16. Discard ownership: cancel playback/loading/readiness, return
+;;; song pages to the SFX pool, stop the alarm and halt music voices. musCur
+;;; alone does not prove residency; only musOn or matching MB_READY does.
+;;; Use musMute when a completed song must remain available for restart.
 musStop:      php
               sei
               sep     #0x20
@@ -2430,3 +2443,74 @@ musResume:    php
               jsr     .kbank musAlarm
 9$:           plp
               rtl
+
+;;; A/X/Y16 transition helpers; near calls stay in bank 0. A muted song owns
+;;; its existing MUSBUF image and DOC pages with no playback alarm. The J13
+;;; adapter may later reuse oscillator 30 for capture without entering music.
+;;; No extra sample copy is retained; readiness and SFX pool bounds together
+;;; prevent effects from overwriting the samples needed by musRestore.
+              .section musresident, text
+;;; Matching MB_READY or active playback proves a complete image. A partial
+;;; load falls through musStop instead. Publish readiness and clear musOn
+;;; with IRQs masked before halting the alarm/voices; keep musWant, musLoop,
+;;; musCur and pool bounds for a later restart.
+musMute:     php
+              sei
+              lda     long:musCur
+              and     ##0x00ff
+              cmp     ##MUS_NONE
+              beq     musMuteDiscard
+              inc     a
+              cmp     long:(MUSBUF+MB_READY)
+              beq     musMuteKeep
+              pha
+              lda     long:musOn
+              and     ##0x00ff
+              bne     musMuteLoaded
+              pla
+musMuteDiscard:
+              plp
+              jmp     .kbank musStop        ; No completed song; 8 MB can retry its bank load.
+musMuteLoaded:
+              pla
+              sta     long:(MUSBUF+MB_READY)
+musMuteKeep: sep     #0x20
+              lda     #0
+              sta     long:musOn
+              plp
+              jsl     long:IIGS_AlarmOff
+              jmp     .kbank musHalt
+
+;;; A new level can retain its preloaded song at zero volume. A request for
+;;; a different song (including MUS_NONE) still releases the old one.
+musMuteWanted:
+              sep     #0x20
+              lda     long:musWant
+              cmp     long:musCur
+              rep     #0x20
+              beq     musMute
+              jmp     .kbank musStop
+
+;;; A16 = wanted bank id. A matching MB_READY restarts the retained image
+;;; through musGo2. Otherwise musPlay can load from the 8 MB song bank; a
+;;; 4 MB machine has no such fallback until the level loader supplies a unit.
+musRestore:  inc     a
+              cmp     long:(MUSBUF+MB_READY)
+              bne     musRestoreBank
+              jmp     .kbank musGo2
+musRestoreBank:
+              dec     a
+              jmp     .kbank musPlay
+
+;;; A completed load stays ready while muted. If the game already wants
+;;; this song at nonzero volume, start it through the existing player.
+musLoaded:   lda     .near snd_MusicVolume
+              beq     musLoadedDone
+              sep     #0x20
+              lda     long:musCur
+              cmp     long:musWant
+              rep     #0x20
+              bne     musLoadedDone
+              jmp     .kbank musGo2
+musLoadedDone:
+              rts

@@ -276,8 +276,9 @@ entryPtr:     asl     a
               rts
 
 ;;; ---------------------------------------------------------------------------
-;;; void W_LoadSet(int16_t set)        In: C = 1-9 a map, 10 the title, 11
-;;; the intermission and the end pictures. Nothing when it is there.
+;;; A16 = set: maps 1-9, title 10, intermission/end pictures 11. Reuse a
+;;; loaded map. On 4 MB, revisiting a picture set can still require another
+;;; song (intermission to victory), even while muted; continue to its selector.
 ;;; ---------------------------------------------------------------------------
 W_LoadSet:    cmp     long:LV_SET
               bne     1$
@@ -287,8 +288,7 @@ W_LoadSet:    cmp     long:LV_SET
               lda     long:(LV_EXT+EX_MODE)
               and     ##0x00ff
               bne     01$
-              lda     .near snd_MusicVolume
-              beq     01$
+              .space  5,0xea               ; Load the song even while muted.
               pla                           ; same pictures, different song:
               bra     1$                    ; INTER -> VICTOR on 4 MB
 01$:          pla
@@ -1026,7 +1026,12 @@ oneEntry:     lda     long:LV_E             ; _Dp[4-7]: the entry
 
 ;;; Song selectors/chunks live after the image's FILL entries. Absolute
 ;;; staging addresses never change W_COLSTART or the planner layout.
-;;; Volume zero and the 8 MB bank path skip all song reads and DOC writes.
+;;; The 8 MB song bank skips these reads. A 4 MB load retains the selected
+;;; song even at volume zero, so the slider can start it without disk I/O.
+;;; LV_SONGDO applies to the chunks following a matching selector. Keep this
+;;; predicate and sumOne's LV_QA predicate equal so progress counts the same
+;;; streams that loading consumes. songFinish transfers ownership before
+;;; clearing the temporary song-unit space.
 songEntry:    cmp     ##0xfff7
               bne     98$
               jmp     .kbank cacheSong
@@ -1045,8 +1050,7 @@ songEntry:    cmp     ##0xfff7
               lda     long:(LV_EXT+EX_MODE)
               and     ##0x00ff
               bne     1$
-              lda     .near snd_MusicVolume
-              beq     1$
+              .space  5,0xea               ; Load the song even while muted.
               lda     ##1
               bra     2$
 1$:           lda     ##0
@@ -1573,7 +1577,8 @@ sumStreams:   lda     long:LV_COMMON
 2$:           rts
 
 ;;; sumOne: add the streams of set C (0-based). Clobbers LV_E, LV_N, LV_SRC
-;;; and LV_T; runSet loads them again. LV_QA is the song this set will play.
+;;; and LV_T; runSet loads them again. LV_QA is a boolean matching songEntry's
+;;; LV_SONGDO selector, including muted 4 MB loads, not a song id.
 sumOne:       jsr     .kbank setRecord
               lda     long:(LV_HDR+8+4),x
               sta     long:LV_N
@@ -1608,8 +1613,7 @@ sumOne:       jsr     .kbank setRecord
               lda     long:(LV_EXT+EX_MODE)
               and     ##0x00ff
               bne     6$
-              lda     .near snd_MusicVolume
-              beq     6$
+              .space  5,0xea               ; Load the song even while muted.
               lda     ##1
               bra     7$
 6$:           lda     ##0
