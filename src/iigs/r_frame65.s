@@ -295,10 +295,16 @@ setupFrame:   ldy     ##(OFS_PL_MO+2)       ; mo = player->mo
               inc     .near validcount
               rts
 
-;;; sortSprites: R_SortVisSprites: FR_ORDER = the vissprites by scale, the
-;;; largest first. Insertion sort preserves the order of equal scales.
-;;; FR_I = 2 * i and FR_N2 = 2 * n (word offsets); FR_TEMP =
-;;; s[i], FR_T its scale; Y = 2 * j.
+;;; sortSprites fills FR_ORDER with byte offsets into vissprites, ordered
+;;; by descending scale. Equal scales retain their input order.
+;;; Insertion sort uses FR_N2 = 2 * count, FR_I = 2 * insertion index,
+;;; FR_TEMP = the sprite offset being inserted, FR_T = its 32-bit scale,
+;;; and Y = 2 * the current destination index in FR_ORDER.
+;;; Each comparison propagates the low-word CMP borrow into high-word SBC.
+;;; Scales come from SPRYSCALE[d], d = 4..1280, and are positive with small
+;;; high words; their difference cannot overflow signed 16-bit arithmetic.
+;;; BMI therefore means the previous sprite has a smaller scale; equality
+;;; does not move it. Keep this range invariant if scale generation changes.
 sortSprites:  lda     .near num_vissprite
               bne     1$
               rts
@@ -324,7 +330,10 @@ sortSprites:  lda     .near num_vissprite
               sta     .near FR_T
               txy                           ; j = i
               ldx     abs:.near (FR_ORDER-2),y ; s[j - 1]->scale < temp->scale:
-              jsr     .kbank scaleLess      ;   on (else s[i] stays)
+              lda     abs:.near (vissprites+OFS_VIS_SCALE),x
+              cmp     .near FR_T
+              lda     abs:.near (vissprites+OFS_VIS_SCALE+2),x
+              sbc     .near (FR_T+2)        ; previous scale - insertion scale
               bmi     5$
               tyx
               bra     9$
@@ -337,7 +346,10 @@ sortSprites:  lda     .near num_vissprite
               dey
               beq     8$
               ldx     abs:.near (FR_ORDER-2),y
-              jsr     .kbank scaleLess
+              lda     abs:.near (vissprites+OFS_VIS_SCALE),x
+              cmp     .near FR_T
+              lda     abs:.near (vissprites+OFS_VIS_SCALE+2),x
+              sbc     .near (FR_T+2)
               bmi     6$
 8$:           lda     .near FR_TEMP         ; s[j] = temp
               sta     abs:.near FR_ORDER,y
@@ -345,16 +357,6 @@ sortSprites:  lda     .near num_vissprite
 9$:           inx
               inx
               bra     3$
-
-;;; scaleLess: N set if the scale of the vissprite at offset X is less than
-;;; FR_T (signed).
-scaleLess:    lda     abs:.near (vissprites+OFS_VIS_SCALE),x
-              cmp     .near FR_T
-              lda     abs:.near (vissprites+OFS_VIS_SCALE+2),x
-              sbc     .near (FR_T+2)
-              bvc     1$
-              eor     ##0x8000
-1$:           rts
 
 ;;; ---------------------------------------------------------------------------
 ;;; void R_RenderMaskedSegRange(const drawseg_t *ds, int16_t x1, int16_t x2)
