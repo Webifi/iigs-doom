@@ -238,9 +238,11 @@ rampVolume:   lda     #0
 
 ;;; ***************************************************************************
 ;;;
-;;; void IIGS_DocWrite2(uint16_t reg, uint16_t values)
-;;; DOC register reg = the low byte of values, reg + 1 = the high byte.
-;;; In: C = reg, _Dp[0-1] = values.
+;;; IIGS_DocWrite2: write _Dp[0] to DOC register A, then _Dp[1] to A + 1.
+;;; Enter with A/X16 and the game direct page; P is restored on return.
+;;; Auto-increment selects the second register. X first holds the address,
+;;; then the second byte while A polls BUSY. A and X are scratch; Y is kept.
+;;; IRQs remain masked across both writes because the handler shares the ports.
 ;;;
 ;;; ***************************************************************************
 
@@ -259,11 +261,11 @@ IIGS_DocWrite2:
               sta     long:SOUNDADRL
               lda     dp:.tiny _Dp
               sta     long:SOUNDDATA
-              lda     dp:.tiny (_Dp+1)      ; the next byte waits until this
-              pha                           ;   one has left the latch
+              lda     dp:.tiny (_Dp+1)
+              tax                           ; retain byte 2 while A checks BUSY
 2$:           lda     long:SOUNDCTL
               bmi     2$
-              pla
+              txa                           ; write byte 2 after the first access
               sta     long:SOUNDDATA
               plp
               rtl
