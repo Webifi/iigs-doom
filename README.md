@@ -14,8 +14,6 @@ A lot of time was spent trying to work around the assumed single-entry write buf
 
 In the end, all I could get was a chunky ~4 FPS on my emulated IIgs with 8 MB and a 12 MHz ZipGS.  Without an accelerator, it would be more like seconds per frame.
 
-Niek van Suchtelen's [AppleSqueezer GS](https://www.applesqueezer.com/) gives it a better shot at being playable. It's a modern 14 MHz accelerator with 14 MB of RAM, and in the updated emulator it manages about 7 FPS in the full-view benchmark. Doom now recognizes the card and shows its core version in the benchmark results.
-
 So, *can it play Doom?*  I guess that depends on how you define "play".  Maybe?  Give it a try and let me know.
 
 # Does it work on a real IIgs?
@@ -33,6 +31,10 @@ The main things that let the engine get to ~4 FPS are:
 
 # Wanna try?
 
-Minimum requirements: A working IIgs, 4 MB RAM (8 MB recommended), and either an AppleSqueezer GS or a 12 MHz ZipGS or TransWarp GS accelerator with at least 32 KB cache. You'll also need a 3.5" drive and 4 blank 800 KB floppies, or some other way to load the image(s).
+Minimum requirements: A working IIgs, 4 MB RAM (8 MB recommended), and either an [AppleSqueezer GS](https://www.applesqueezer.com/), or a 12 MHz ZipGS or TransWarp GS accelerator with at least 32 KB cache. You'll also need a 3.5" drive and 4 blank 800 KB floppies, or some other way to load the image(s).
 
 Get the [disk images](https://github.com/Webifi/iigs-doom/releases/latest).
+
+# Want it to play faster?
+
+Niek van Suchtelen's [AppleSqueezer GS](https://www.applesqueezer.com/) accelerator makes it more playable.
