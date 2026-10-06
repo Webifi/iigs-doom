@@ -124,7 +124,7 @@
     (memory Code3c (address (#x033e00 . #x033fff))
             (section coldcode))
     (memory BspCode (address (#x034000 . #x035fff))
-            (section bspcode (segthird #x035db6)))
+            (section bspcode (solidcode #x035c90) (segthird #x035db6)))
     (memory Code3d0 (address (#x036000 . #x0366ff))
             (section coldcode))
     (memory Code3d (address (#x036700 . #x0388ff))
@@ -184,9 +184,11 @@
     ;; Menu-only text and glyphs occupy the unused tail of bank 4.
     (memory J13Menu (address (#x04eca2 . #x04eeff))
             (section (j13ui #x04eca2)))
-    ;; Menu-only keyboard detection, outside the gameplay reader.
+    ;; Menu-only keyboard detection, wall attributes, option installers,
+    ;; masked-range wrappers and bar patches. Bar post offsets stay within
+    ;; bank 4 for mwCols; solid wall wrappers share bank 3 with the tier code.
     (memory J13Auto (address (#x04ef00 . #x04ffff))
-            (section (j13auto #x04ef00)))
+            (section (j13auto #x04ef00) (texcolor #x04f000) (solidpatch #x04f100) (gratepatch #x04f500)))
     ;; Column/IRQ row-reader continuations share bank 4 with stealthcode;
     ;; their near calls and DBR-relative state accesses require that bank.
     (memory J13Pump (address (#x0486d0 . #x0488ff))

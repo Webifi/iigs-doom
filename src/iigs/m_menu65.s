@@ -39,6 +39,8 @@
               .extern S_SetSfxVolume, S_SetMusicVolume
               .extern I_MenuPalette, I_MenuPaletteBack, message_on
               .extern uiOpen, J13Toggle, j13Enabled
+              .extern changeSolid, solidOn, changeGrates, grateMode, wallOptionText
+              .extern uiSolid, uiGrates
               .public menuNum
 
 PL            .equ    _g_player
@@ -566,6 +568,8 @@ itemRoutine:
               .word   .word0 viewSize
               .word   .word0 changeGamma
               .word   .word0 sfxVolume
+              .word   .word0 changeSolid
+              .word   .word0 changeGrates
               .word   .word0 musicVolume
               .word   .word0 changeTwIrq
               .word   .word0 changeAlwaysRun
@@ -574,7 +578,7 @@ itemRoutine:
               .word   .word0 changeMouseMove
               .word   .word0 controls
               .word   .word0 changeJ13
-              .space  16                    ; Keep later entries fixed; menuDraw is in j13cold.
+              .space  12                    ; Keep later entries fixed; menuDraw is in j13cold.
 
 ;;; ---------------------------------------------------------------------------
 ;;; void M_Init(void): the main menu, no message; the lumps of the patches
@@ -2698,12 +2702,12 @@ bmFontShade:  sta     dp:.tiny (_Dp+6)
 ;;; CARD: play keeps the AppleTalk/IRQ setting that the owner made in the card's
 ;;; control panel. The card then runs slow while interrupts are masked.
 ;;; bmTwStart is the first call of bmAccelOff and runs with a TransWarp GS only:
-;;; the page gets its fifth row. A build with no MUSIC VOLUME row has no place
+;;; the page gets its seventh row. A build with no MUSIC VOLUME row has no place
 ;;; for it. bmTwPlay puts the card in its play state. The caller prepares the
 ;;; firmware call as bmAccelOff does; the RTL of the firmware routine returns to it.
 bmTwStart:
 #if MUSIC_MENU
-              lda     ##5
+              lda     ##7
               sta     long:(menuNum + MENU_VIDEO)
 #endif
 bmTwPlay:     lda     long:VW_TWIRQ
@@ -2736,8 +2740,8 @@ uiInit:       lda     ##0
 
 uiReload:     rtl                           ; Apply gamma after the restore.
 
-;;; Old settings may pair a small view with low detail. Small views use
-;;; high-detail drawers; normalize both saved copies without a dirty mark.
+;;; All supported view sizes use high-detail drawers. Normalize low-detail
+;;; settings in both in-memory copies so loading does not mark them dirty.
 UI_FDETAIL    .equ    20              ; F_DETAIL of m_config65.s.
               .public uiLoadSettings
               .extern G_LoadSettings, G_RememberSettings, speedSize, vwStored
@@ -2745,10 +2749,8 @@ uiLoadSettings:
               jsl     long:oneLoadSettings
               jsl     long:speedSize        ; The size of the file, else of the
               bra     1$                    ; speed test (src/iigs/m_speed65.s).
-              .space  14                    ; preserve every following address
-1$:           pha                           ; Every size draws at high detail:
-              stz     .near detailLevel     ; FULL FAST (low detail) went, it
-                                            ; saved only 6% (1% on fight frames).
+1$:           pha                           ; preserve the chosen view size
+              stz     .near detailLevel     ; high-detail drawer for every size
               lda     ##0
               jsl     long:R_SetDetail
               sep     #0x20
@@ -2758,7 +2760,6 @@ uiLoadSettings:
               pla
               sta     long:VW_SIZE
               bra     2$                    ; The file keeps its byte: 0 is none.
-              .space  6
 2$:           lda     ##VW_INITTAG
               sta     long:VW_INIT
               jsl     long:G_SettingsChanged ; Collect the normalized checksum.
@@ -2859,7 +2860,7 @@ uiHalf:       .asciz  "1/2 SIZE"
 uiTwo:        .asciz  "2/3 SIZE"
 uiFull:       .asciz  "FULL"
 
-              .space  9                     ; old table/string extent
+              .space  1                     ; reserved table/string extent
 
 
 ;;; C = direction (0 left), X = 0 SFX or 2 music; values stay in 0..15.
@@ -2996,8 +2997,11 @@ uiSettings:   pei     dp:.tiny (_Dp+8)
               ldy     ##284
               jsr     .kbank uiAlign
               bra     6$
-4$:           cpx     ##48                  ; J13 is an on/off item.
-              beq     99$
+4$:           cpx     ##48                  ; Keyboard/wall/grate option labels.
+              bcc     41$
+              jsr     .kbank wallOptionText
+              bra     31$
+41$:
               cpx     ##20
               beq     3$
               cpx     ##44                  ; TWGS SLOW IRQ: OFF or CARD
@@ -3007,7 +3011,7 @@ uiSettings:   pei     dp:.tiny (_Dp+8)
               beq     2$
               ldx     ##.word0 uiCard
               bra     2$
-              .space  9               ; Keep later uicode entries fixed.
+              .space  4               ; Keep later uicode entries fixed.
 5$:           lda     long:UI_VALUE
               cpx     ##36
               bcs     51$
@@ -3125,29 +3129,29 @@ uiLCpu:       .asciz  "CPU"
 uiLCache:     .asciz  "CACHE"
 uiLRom:       .asciz  "ROM"
 
-;;; Menu counts, item offsets, layout and parent selections.
-;;; Retain the old SOUND slots so later item indices stay fixed (the SOUND item
-;;; of OPTIONS went: TWGS SLOW IRQ takes its place in the item tables).
+;;; Menu counts, item offsets, layout and parent selections. menuItems gives
+;;; byte offsets into the parallel item tables; keep routine, status, label
+;;; and kind entries aligned when adding a row. Counts may hide trailing rows.
 ; INPUT starts with five items; installProbe exposes its sixth J13 row
 ; only on supported ROMs. Parallel item/label/kind tables include that row.
 menuNum:      .word   6, 5, 8, 5, 11, 8
-; VIEW, GAMMA and SFX share a page; music adds its row when enabled. With a
+; View, gamma, volume and wall/grate choices share a page. With a
 ; TransWarp GS the page has TWGS SLOW IRQ as its last row (bmTwStart).
 #if MUSIC_MENU
-              .word   4, 2, 5
+              .word   6, 2, 5
 #else
-              .word   3, 1, 5
+              .word   5, 1, 5
 #endif
-menuItems:    .word   0, 12, 22, 38, 48, 70, 86, 90, 96
+menuItems:    .word   0, 12, 22, 38, 48, 70, 86, 90, 100
 menuX:        .word   97, 48, 112, 60, 48, 112, 60, 60, 60
-menuY:        .word   64, 63, 25, 48, 24, 25, 56, 48, 48
-menuLine:     .word   16, 16, 13, 18, 16, 13, 24, 28, 20
+menuY:        .word   64, 63, 25, 48, 24, 25, 44, 48, 48
+menuLine:     .word   16, 16, 13, 18, 16, 13, 20, 28, 20
 menuPrev:     .word   0xffff, MENU_MAIN, MENU_MAIN, MENU_MAIN, MENU_INPUT
               .word   MENU_MAIN, MENU_OPTIONS, MENU_OPTIONS, MENU_OPTIONS
 menuPrevItem: .word   0, 0, 2, 1, 4, 3, 1, 1, 2
 itemStatus:   .word   1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
               .word   2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1
-              .word   1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1
+              .word   1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 1
               .word   2                    ; J13 / IIe KEYBOARD
 itemLump:     .word   L_NGAME, L_OPTION, L_LOADG, L_SAVEG, L_QUITG, L_QUITG
               .word   L_JKILL, L_JKILL+2, L_JKILL+4, L_JKILL+6, L_JKILL+8
@@ -3157,7 +3161,7 @@ itemLump:     .word   L_NGAME, L_OPTION, L_LOADG, L_SAVEG, L_QUITG, L_QUITG
               .word   0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
               .word   0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
               .word   0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff, 0xffff
-              .word   0xffff
+              .word   0xffff, 0xffff, 0xffff
 uiTitles:     .word   0, 0, 0, .word0 uiOptions, 0, 0, .word0 uiVideo
               .word   .word0 uiSound, .word0 uiInput
 uiLabels:     .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
@@ -3165,18 +3169,19 @@ uiLabels:     .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   .word0 txBench, .word0 txSaveSet, 0, 0
               .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   .word0 uiLView, .word0 uiGamma, .word0 uiSfx
-              .word   .word0 uiMusic, .word0 uiTwirq, .word0 uiRun, .word0 uiMouse
+              .word   .word0 uiSolid, .word0 uiGrates, .word0 uiMusic, .word0 uiTwirq
+              .word   .word0 uiRun, .word0 uiMouse
               .word   .word0 uiSpeed, .word0 uiMove, .word0 uiKeys
               .word   .word0 j13MenuLabel
 uiKinds:      .word   0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
               .word   4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-              .word   0, 0, 0, 0, 0, 20, 28, 36, 40, 44, 8, 12, 32, 16, 0
+              .word   0, 0, 0, 0, 0, 20, 28, 36, 52, 56, 40, 44, 8, 12, 32, 16, 0
               .word   48
 uiValues:     .long   0, showMessages, _g_alwaysRun, iigs_mouseon
 ; Unused kind 24 keeps the reserved detailimg fragment linked.
               .long   iigs_mousemove, VW_SIZE, menuDetailPad, _g_gamma
               .long   iigs_mousespeed, snd_SfxVolume, snd_MusicVolume, VW_TWIRQ
-              .long   j13Enabled
+              .long   j13Enabled, solidOn, grateMode
 uiOptions:    .asciz  "OPTIONS"
 uiMessages:   .asciz  "MESSAGES"
 uiVideo:      .asciz  "DISPLAY & SOUND"

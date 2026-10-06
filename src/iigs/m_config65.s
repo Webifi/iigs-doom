@@ -12,7 +12,9 @@
 ;;;        the music volume 0-15, the mouse, the mouse speed 0-9, the mouse
 ;;;        moves, the detail (0 high, 1 low), the view size (VW_SIZE), the
 ;;;        TWGS SLOW IRQ (VW_TWIRQ: 0 OFF, 1 CARD; 0 in older files)
-;;;        and J13 gameplay input (0 OFF, 1 ON; 0 in older files)
+;;;        J13 gameplay input (0 OFF, 1 ON; 0 in older files),
+;;;        simplified walls (1 means Wall Textures OFF; byte 24), and grates
+;;;        (0 original, 1 bars, 2 none; byte 25)
 ;;;        (1 byte each)
 ;;;   32   the Doom key of each ADB key code 0-127 (NOKEY: none)
 ;;;   160  the saved games (F_SLOTS, src/iigs/g_game65.s)
@@ -26,6 +28,7 @@
               .extern _Dp, _g_gamma, _g_alwaysRun, showMessages
               .extern iigs_mouseon, iigs_mousespeed, iigs_mousemove, detailLevel
               .extern R_SetDetail, J13SettingsInit, J13SettingsCollect
+              .extern solidLoad, solidCollect
               .extern snd_SfxVolume, snd_MusicVolume, S_SetSfxVolume, S_SetMusicVolume
               .extern keyTable, bmSave, bmSaved, W_NeedDisk
 PAD_WF        .equ    67              ; (the checks that W_NeedDisk does went)
@@ -187,7 +190,8 @@ G_LoadSettings:
               inx
               cpx     ##ADB_KEYS
               bcc     2$
-9$:           jsr     .kbank collect        ; the file now; the disk has it
+9$:           jsl     long:solidLoad
+              jsr     .kbank collect        ; the file now; the disk has it
 ;;; Also used after uiLoadSettings normalizes an old view setting.
 G_RememberSettings:
               ldx     ##FILE_SIZE - 2
@@ -286,6 +290,7 @@ collect:      ldx     ##F_VERSION - 1
               lda     long:vwStored         ; 0 until the player picks a size
               sta     long:(settingsFile+VW_FVSIZE)
               jsl     long:J13SettingsCollect ; A8: pack bytes 22/23 before checksum.
+              jsl     long:solidCollect
               .space  4,0xea
               rep     #0x20
               ldx     ##0                   ; the Doom key of each ADB key
@@ -357,7 +362,7 @@ G_SaveUndo:   ldx     ##FILE_SIZE - 2
               rtl
 
 ;;; Keep coldcode offsets after moving writeFile to vwcode.
-              .space  99
+              .space  91
 
 ;;; ---------------------------------------------------------------------------
 ;;; Slot firmware needs bank 0 code, D = 0, emulation mode and page-1 S.

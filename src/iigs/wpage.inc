@@ -90,7 +90,7 @@ W_YH          .equ    0xd0            ; genColumn
 W_CC          .equ    0xd2
 W_TOP         .equ    0xd4
 W_BOT         .equ    0xd6
-;;; 0xd8-0xd9: free (the seg prologue keeps the loop index in X)
+;;; 0xd8-0xd9: solidFlat's even/odd SHR bytes (SWB in solid65.s).
 W_T4          .equ    0xda            ; 4 bytes for fstep
 W_MH          .equ    0xe0            ; MULHI16: a high word
 W_T2          .equ    0xe2

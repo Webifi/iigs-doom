@@ -360,10 +360,11 @@ scaleLess:    lda     abs:.near (vissprites+OFS_VIS_SCALE),x
 ;;; void R_RenderMaskedSegRange(const drawseg_t *ds, int16_t x1, int16_t x2)
 ;;;   In: _Dp[0-3] = ds (in the near bank), C = x1, _Dp[4-7] = x2.
 ;;; The masked mid texture of a two sided line from x1 to x2, column by
-;;; column (each column only once: maskedtexturecol[x] becomes SHRT_MAX).
+;;; column. Emitted columns set maskedtexturecol[x] to SHRT_MAX so later
+;;; ranges skip them. The NONE grate mode can bypass an entire range.
 ;;; maskedSeg: the same for the drawseg at near FR_DS, from its x1 to x2.
 ;;; ---------------------------------------------------------------------------
-              .public R_RenderMaskedSegRange
+              .public R_RenderMaskedSegRange, maskedSeg, maskedColsCall, FR_TEX, FR_PATCH, FR_WMASK
 R_RenderMaskedSegRange:
               sta     .near FR_X
               lda     dp:.tiny (_Dp+4)
@@ -565,6 +566,9 @@ maskedRange:  ldx     .near FR_DS
               dex
               dex
               bpl     72$
+;;; grateReapply patches this call at option/view changes. Replacement
+;;; patches must restore FR_PATCH so the release below uses the cached lump.
+maskedColsCall:
               jsl     long:mwCols           ; the columns (from x1 = FR_X)
               lda     .near FR_PATCH        ; Z_ChangeTagToCache(patch)
               sta     dp:.tiny _Dp

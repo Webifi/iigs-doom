@@ -38,6 +38,7 @@
               .extern xtoviewangleTable
               .extern fullcolormap, iigs_shrcmapA, iigs_shrcmapB
               .extern viewangle, fixedcolormap, skypatch, skywidthmask
+              .extern solidReapply, solidMid, solidTop, solidBot
               .extern DC_SRC, DC_ROW, DC_COUNT, DC_FSTEP, DC_FRAC, DC_FLATW
               .extern spryscale, sprtopscreen, mfloorclip, mceilingclip
               .extern W_GetLumpByNum, FixedMul
@@ -1278,34 +1279,38 @@ genColumn:    stx     dp:W_X2
               sta     dp:W_FC
 
 20$:          lda     dp:W_SEGTEX
-              beq     30$
+              beq     gn30
+;;; solidReapply replaces this JSR with three NOPs for solid walls.
+;;; gcTex and gcMid/Top/Bot mark instruction addresses without emitting bytes.
+gcTex         .equ    .
               jsr     .kbank texCol
 
               ;; the wall tiers
-30$:          lda     dp:W_MIDTEX
-              beq     40$
+gn30:         lda     dp:W_MIDTEX
+              beq     gn40
               lda     dp:W_YH               ; single sided line: rows yl..yh
               sec
               sbc     dp:W_YL
               inc     a
-              bmi     39$
-              beq     39$
+              bmi     gn39
+              beq     gn39
               sta     dp:.tiny DC_COUNT
               nop                           ; the row is already W_YL
               nop
               nop
               nop
+gcMid         .equ    .
               jsr     .kbank drawMid
               rep     #0x20                 ; (the tier returns 8-bit A)
-39$:          lda     ##CONST_VIEWHEIGHT
+gn39:         lda     ##CONST_VIEWHEIGHT
               sta     dp:W_CC
               lda     ##0xffff
               sta     dp:W_FC
-              brl     50$
+              brl     gn50
 
               ;; two sided line, top wall
-40$:          lda     dp:W_TOPTEX
-              beq     45$
+gn40:         lda     dp:W_TOPTEX
+              beq     gn45
               STEP32  W_PH, W_PHS           ; mid = pixhigh >> FRACBITS
               dec     a
               sta     dp:W_MID
@@ -1316,7 +1321,7 @@ genColumn:    stx     dp:W_X2
               sta     dp:W_MID
 41$:          lda     dp:W_MID              ; if (mid >= yl): rows yl..mid
               SLT     dp:W_YL
-              bmi     43$
+              bmi     gn43
               lda     dp:W_MID
               sec
               sbc     dp:W_YL
@@ -1326,24 +1331,25 @@ genColumn:    stx     dp:W_X2
               nop
               nop
               nop
+gcTop         .equ    .
               jsr     .kbank drawTop
               rep     #0x20                 ; (the tier returns 8-bit A)
               lda     dp:W_MID              ; cc_rwx = mid
               sta     dp:W_CC
-              bra     46$
-43$:          lda     dp:W_YL               ; cc_rwx = yl - 1
+              bra     gn46
+gn43:         lda     dp:W_YL               ; cc_rwx = yl - 1
               dec     a
               sta     dp:W_CC
-              bra     46$
-45$:          lda     dp:W_MC               ; no top wall
-              beq     46$
+              bra     gn46
+gn45:         lda     dp:W_MC               ; no top wall
+              beq     gn46
               lda     dp:W_YL
               dec     a
               sta     dp:W_CC
 
               ;; bottom wall
-46$:          lda     dp:W_BOTTEX
-              beq     48$
+gn46:         lda     dp:W_BOTTEX
+              beq     gn48
               STEP32  W_PL, W_PLS           ; mid = (pixlow + FRACUNIT - 1) >> FRACBITS
               sta     dp:W_MID
               lda     dp:W_CC               ; if (mid <= cc_rwx) mid = cc_rwx + 1
@@ -1354,7 +1360,7 @@ genColumn:    stx     dp:W_X2
               sta     dp:W_MID
 47$:          lda     dp:W_YH               ; if (mid <= yh): rows mid..yh
               SLT     dp:W_MID
-              bmi     49$
+              bmi     gn49
               lda     dp:W_YH
               sec
               sbc     dp:W_MID
@@ -1362,23 +1368,24 @@ genColumn:    stx     dp:W_X2
               sta     dp:.tiny DC_COUNT
               lda     dp:W_MID              ; tierDraw reads the row from W_YL
               sta     dp:W_YL
+gcBot         .equ    .
               jsr     .kbank drawBot
               rep     #0x20                 ; (the tier returns 8-bit A)
               lda     dp:W_MID              ; fc_rwx = mid
               sta     dp:W_FC
-              bra     50$
-49$:          lda     dp:W_YH               ; fc_rwx = yh + 1
+              bra     gn50
+gn49:         lda     dp:W_YH               ; fc_rwx = yh + 1
               inc     a
               sta     dp:W_FC
-              bra     50$
-48$:          lda     dp:W_MF               ; no bottom wall
-              beq     50$
+              bra     gn50
+gn48:         lda     dp:W_MF               ; no bottom wall
+              beq     gn50
               lda     dp:W_YH
               inc     a
               sta     dp:W_FC
 
               ;; a column that blocks all sight is solid for the BSP code
-50$:          lda     dp:W_MC
+gn50:         lda     dp:W_MC
               ora     dp:W_MF
               beq     52$
               lda     dp:W_CC               ; if (fc_rwx <= cc_rwx + 1)
@@ -1520,8 +1527,11 @@ skyFlat:      txa
               rts
 
 ;;; ---------------------------------------------------------------------------
-;;; drawMid, drawTop, drawBot: rows DC_ROW.. (DC_COUNT >= 1) of the tier in
-;;; column x (X = 2x, kept). The texture column of x is made first if needed.
+;;; drawMid, drawTop, drawBot: DC_COUNT rows starting at W_YL in column X/2.
+;;; Enter with DC_COUNT >= 1 and A/X/Y16; return A8 with X preserved.
+;;; Build the texture column only when W_TCX differs from X. This also
+;;; serves protected textures reached through solidMid/Top/Bot, whose
+;;; caller bypasses the shared texCol setup.
 ;;; ---------------------------------------------------------------------------
 TIER          .macro  tex, dir, wm, tm
               cpx     dp:W_TCX              ; (then W_TCX = X: tierDraw, texRec
@@ -2655,6 +2665,7 @@ c26LightSetup:
               adc     ##.word0 (c26Reverse + 84)
               sta     long:(c26Lookup+1)
               rtl
+              .public c26Reverse
 c26Reverse:
               .byte   .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936)
               .byte   .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936), .byte1 (iigs_shrcmapA + 7936)
@@ -4024,6 +4035,12 @@ finetangentTable_part_4:
 
               .public drawMid, drawTop, drawBot, ceilFill, ceilSky, floorFill
               .public texCol, tcNew, tcLoad, ONE_TC, ONE_SPAN
+              .public gcTex, gcMid, gcTop, gcBot, c17Hook, c17Return, genColumn, c17Mode
+              .public v02c17slow, v05c17slow, v06c17slow, v10c17slow
+              .public v13c17slow, v14c17slow, v20c17slow, v28c17slow
+              .public v02c17draw, v05c17draw, v06c17draw, v10c17draw
+              .public v13c17draw, v14c17draw, v20c17draw, v28c17draw
+              .public v07topCall, v15topCall, v07botCall, v15botCall
 
               .public oneSkip
 
@@ -4037,18 +4054,23 @@ ONE_SPAN        .equ    (tcSpan + 12) ; unchanged instruction site
               .extern oneViewMode
               .section core5cold, text
               .public c5Mode
-;;; Remove our old patches before the existing mode installer runs. The
-;;; original full/half/two-thirds instruction streams keep their addresses.
+;;; Restore shared patch sites before installing the selected view mode.
+;;; c17Mode owns the textured tier calls and continuations; solidReapply
+;;; must run last to apply the wall/grate choices on top of that layout.
 c5Mode:       php
               rep     #0x30
               jsl     long:c19Restore
               jsl     long:ssMode
               jsl     long:c16Mode
               jsl     long:c17Mode
-              jsl     long:c19Install
+              jsl     long:c5Install
               plp
               rtl
-              .space 290 - (. - c5Mode) ; keep the cold fragment and its callers
+;;; Use the reserved mode-change area without moving subsequent code.
+              .space (290 - 9) - (. - c5Mode)
+c5Install:    jsl     long:c19Install
+              jsl     long:solidReapply
+              rtl
 
 
 ;;; Constant-row products using shared magnitude kernels for tierDraw.

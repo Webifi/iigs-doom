@@ -24,6 +24,9 @@
 ;;;          to -1..168: 0 when the wall ends above row 0
 ;;;   W_CB1, W_FT, W_MID1, W_MID, W_CC1: rows; W_FC1: the new floor clip + 1
 ;;; The edges step as bytes (STEP8E of src/iigs/r_seg65.s: 24 bits).
+;;; c17Mode installs the single-tier c17draw/c17slow call operands.
+;;; solidReapply then overrides them, plus topCall/botCall in mixed-tier
+;;; loops. All tier calls enter with A16 and return A8, preserving X.
 
 #define V_TEX (V_ONE || V_TOP || V_BOT)
 
@@ -131,7 +134,7 @@ L(row93):
               bcc     L(row11)
               sta     dp:.tiny DC_COUNT     ; (the high bytes of the DC_ words
               rep     #0x20                 ;   are 0). The row is already W_YL.
-L(c17draw)    .equ    .
+L(c17draw):
               jsr     .kbank texCol         ; FULL: fixed mid continuation
 L(row11):          lda     #(CONST_VIEWHEIGHT + 1) ; closed: ceiling clip 168,
               sta     long:ceilingclip,x    ;   floor clip -1
@@ -157,9 +160,10 @@ L(row12):          sta     dp:W_MID1
               sta     dp:.tiny DC_COUNT
               rep     #0x20                 ; the row is already W_YL
 #if !V_BOT
-L(c17draw)    .equ    .
+L(c17draw):
               jsr     .kbank texCol         ; FULL: fixed top continuation
 #else
+L(topCall):
               jsr     .kbank drawTop        ; (8-bit A back: texRec)
 #endif
               lda     dp:W_MID1
@@ -200,9 +204,10 @@ L(row16):          sta     dp:W_MID
               sta     dp:W_YL
               rep     #0x20
 #if !V_TOP
-L(c17draw)    .equ    .
+L(c17draw):
               jsr     .kbank texCol         ; FULL: fixed bottom continuation
 #else
+L(botCall):
               jsr     .kbank drawBot        ; (8-bit A back: texRec)
 #endif
               lda     dp:W_MID              ; the new floor clip + 1 = mid + 1
