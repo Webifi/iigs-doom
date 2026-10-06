@@ -118,10 +118,13 @@ setPsprite:   phx
 callAction:   .byte   0xdc                  ; jml [ACT_JMP]
               .word   .word0 ACT_JMP
 
-;;; wInfo: X = the near address of weaponinfo[readyweapon].
+;;; wInfo uses readyweapon; wInfoOf takes weapon number 0..8 in A16.
+;;; Both return X = near address of its 12-byte weaponinfo record.
 wInfo:        lda     .near (PL+OFS_PL_READYWEAPON)
-wInfoOf:      ldx     ##SIZEOF_WI
-              jsl     long:IIGS_MulLo16
+wInfoOf:      asl     a                     ; byte index into the word offset table
+              tax
+              lda     long:weaponOffsets,x
+              nop                           ; retain following cache slots
               clc
               adc     ##.near weaponinfo
               tax
@@ -1378,3 +1381,10 @@ fbOne:        bit     .near FB_R
               .space  1                     ; (232 bytes: the first-fit placement
                                             ;   puts it in Code5g, and no other cold
                                             ;   code moves)
+
+;;; Byte offsets into weaponinfo, indexed by twice the weapon number 0..8.
+;;; Values must match weapon order and SIZEOF_WI (12). iigs.scm places this
+;;; read-only table at $00:B800-$00:B811, separately from executable code.
+              .section weaponoffsets, rodata
+              .public weaponOffsets
+weaponOffsets: .word  0, 12, 24, 36, 48, 60, 72, 84, 96

@@ -3,6 +3,7 @@
 ;;; restore their background before drawing; the menu forces a full redraw
 ;;; on return. Damage, bonus and radiation-suit tints follow ST_doPaletteStuff.
 
+              .extern weaponOffsets
               .rtmodel version, "1"
               .rtmodel core, "*"
 
@@ -245,8 +246,10 @@ ST_Start:     stz     .near st_refreshed    ; st_needrefresh = true
               ldy     ##(ST_Y+3)
               jsr     .kbank tallNum
               lda     .near (PL+OFS_PL_READYWEAPON) ; Ready weapon's ammo field.
-              ldx     ##SIZEOF_WI
-              jsl     long:IIGS_MulLo16
+              asl     a                     ; weapon 0..8 -> word offset-table index
+              tax
+              lda     long:weaponOffsets,x ; record offset (SIZEOF_WI = 12)
+              nop                           ; retain following cache slots
               tax
               lda     abs:.near (weaponinfo+OFS_WI_AMMO),x
               asl     a
@@ -412,8 +415,10 @@ readyNum:     lda     .near _g_fps_show
               lda     ##.near _g_fps_framerate
               bra     3$
 1$:           lda     .near (PL+OFS_PL_READYWEAPON)
-              ldx     ##SIZEOF_WI
-              jsl     long:IIGS_MulLo16
+              asl     a                     ; weapon 0..8 -> word offset-table index
+              tax
+              lda     long:weaponOffsets,x ; record offset (SIZEOF_WI = 12)
+              nop                           ; retain following cache slots
               tax
               lda     abs:.near (weaponinfo+OFS_WI_AMMO),x
               cmp     ##CONST_AM_NOAMMO

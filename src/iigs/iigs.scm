@@ -57,6 +57,9 @@
             (section (core14 #x009000)))
     (memory Core16Head (address (#x009100 . #x00927f))
             (section (core16head #x009100)))
+    ;; Nine immutable word offsets into weaponinfo; accessed with long loads.
+    (memory WeaponOffsets (address (#x00b800 . #x00b811))
+            (section (weaponoffsets #x00b800)))
     (memory IrqState (address (#x00bd00 . #x00bd04))
             (section (irqstate #x00bd00)))
     (memory IrqCode (address (#x00dd00 . #x00deff))

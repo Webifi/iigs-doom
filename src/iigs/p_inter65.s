@@ -5,6 +5,7 @@
 ;;; the death state and bookkeeping. Damage may invoke actor actions, so
 ;;; callers must preserve live scratch across these calls.
 
+              .extern weaponOffsets
               .rtmodel version, "1"
               .rtmodel core, "*"
 
@@ -452,8 +453,10 @@ giveAmmo:     cmp     ##CONST_AM_NOAMMO
 ;;; (1 clip dropped, else 2) and the weapon. Out: carry set if either.
 giveWeapon:   pha
               lda     .near IN_WEAPON       ; the ammo of the weapon
-              ldx     ##SIZEOF_WI
-              jsl     long:IIGS_MulLo16
+              asl     a                     ; weapon 0..8 -> word offset-table index
+              tax
+              lda     long:weaponOffsets,x ; record offset (SIZEOF_WI = 12)
+              nop                           ; retain following cache slots
               tax
               lda     abs:.near (weaponinfo+OFS_WI_AMMO),x
               plx
