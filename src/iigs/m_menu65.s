@@ -1651,6 +1651,8 @@ TW_IRQOFF     .equ    0xbcff34        ; Disable slowdown while I is set.
 TW_GETCFG     .equ    0xbcff3c        ; GetTWConfig.
 TW_SETCFG     .equ    0xbcff40        ; SetTWConfig.
 ROM_IDY       .equ    0xfffb59        ; ROM ID ($FE1F) result Y: version.
+AS_PRESENT    .equ    0xe2000a        ; AppleSqueezer API: byte $01 when present.
+AS_CORE       .equ    0xe2000c        ; Core version, valid after the presence check.
 
 msgTexts:     .long   msgNightmare, msgQuit, msgEndGame, msgSaveDead
               .long   VW_BTXT, msgSaveFail
@@ -1659,6 +1661,7 @@ txSaveSet:    .asciz  "SAVE SETTINGS"
 txDemo3:      .asciz  "demo3"
 txBZip:       .asciz  "ZIPGS "
 txBTw:        .asciz  "TRANSWARP GS "
+txBAs:        .asciz  "APPLESQUEEZER "
 txBNative:    .asciz  "65C816 "
 txBMhz:       .asciz  " MHZ"
 txBKb:        .asciz  " KB"
@@ -2291,20 +2294,35 @@ bmRuns:       clc
               clc
 9$:           rts
 
-;;; bmAccel: VW_BACC = card bits (1 ZipGS, 2 TWGS), VW_BCACHE = KB,
-;;; VW_BROM = ROM version. Probe writable slot flags (Zip Chip manual);
-;;; without a ZipGS these are unused annunciator switches.
+;;; bmAccel: VW_BACC bits identify ZipGS (1), TWGS (2) or AppleSqueezer (4).
+;;; VW_BROM is the motherboard ROM version; VW_BCACHE is reported cache KB
+;;; (0 means unreported), and VW_BCORE is the AppleSqueezer core byte or 0.
+;;; Check AppleSqueezer first and return on detection, before any ZipGS
+;;; unlock/probe writes. Otherwise probe writable ZipGS slot flags, then
+;;; the TWGS signature/firmware. Detection does not select a CPU clock.
 bmAccel:      php
               sei                           ; (no write between the unlock
               sep     #0x20                 ;   writes)
               lda     #0
               sta     long:VW_BACC
               sta     long:(VW_BACC+1)
+              sta     long:VW_BCORE
+              sta     long:(VW_BCORE+1)
               sta     long:VW_BCACHE
               sta     long:(VW_BCACHE+1)
               sta     long:(VW_BROM+1)
               lda     long:ROM_IDY
               sta     long:VW_BROM
+              lda     long:AS_PRESENT
+              cmp     #1
+              bne     bmOtherAccel
+              lda     #4
+              sta     long:VW_BACC
+              lda     long:AS_CORE
+              sta     long:VW_BCORE
+              plp
+              rts
+bmOtherAccel:
               jsr     .kbank bmUnlock
               lda     long:ZIPSLOT
               pha
@@ -2359,107 +2377,22 @@ bmAccel:      php
               rts
 bmCacheKB:    .byte   8, 16, 32, 64
 
-;;; bmClock: VW_BKHZ = CPU kHz from the DOC timer (34.9404 Hz).
-;;; $C02E would start the ZipGS counter delay. The two loops differ by
-;;; 672 cycles per pass, cancelling the shared cost of reading the timer.
+;;; bmClock: estimate CPU kHz from the DOC ramp at 34.9404 steps/second.
+;;; Measure two loop lengths and subtract their average times to remove
+;;; shared timer-read overhead. The 8/40-iteration pair differs by 672 CPU
+;;; cycles per pass; AppleSqueezer uses 256/768, a difference of 10752.
+;;; The longer pair allows recovery after sound I/O. Subtraction cancels
+;;; any fixed slowdown only if it finishes within BOTH loop lengths;
+;;; neither card detection nor this timing method establishes that duration.
+;;; The displayed clock is measured, not read from the presence/core bytes.
+;;; Using the DOC also avoids starting the ZipGS $C02E counter delay.
 BM_STEPS      .equ    17
 BM_KHZ        .equ    393928506       ; 34.9404 x 672 / 1000 x 2^24
-bmClock:      php
-              sei
-              lda     ##8
-              jsr     .kbank bmPasses
-              sta     long:VW_BQ
-              txa
-              sta     long:(VW_BQ+2)
-              lda     ##40
-              jsr     .kbank bmPasses
-              sec                           ; B - A (2^24 x steps a pass)
-              sbc     long:VW_BQ
-              sta     dp:.tiny (_Dp+4)
-              txa
-              sbc     long:(VW_BQ+2)
-              sta     dp:.tiny (_Dp+6)
-              bmi     8$
-              ora     dp:.tiny (_Dp+4)
-              beq     8$
-              lda     ##(BM_KHZ & 0xffff)
-              sta     dp:.tiny _Dp
-              lda     ##(BM_KHZ >> 16)
-              sta     dp:.tiny (_Dp+2)
-              jsl     long:_UDivMod32
-              bra     9$
-8$:           lda     ##0                   ; (no result)
-9$:           sta     long:VW_BKHZ
-              plp
+BM_AS_KHZ     .equ    (BM_KHZ * 4)    ; 16x cycle gap: 4x numerator / (delta Q >> 2)
+bmClock:      jsl     long:bmClockMeasure
               rts
 
-;;; bmPasses: the loop with C x (8 NOP, DEY, BNE) in a pass, from an edge
-;;; of the ramp to BM_STEPS steps or more after it: X:C = 2^24 x the steps /
-;;; the passes. The ramp byte goes 254, 255, 255, 1: the steps are the sum
-;;; of (new - old) & 255 (a hidden step comes with the next one).
-bmPasses:     sta     dp:.tiny (_Dp+2)      ; the count of a pass
-              sep     #0x20
-              jsr     .kbank bmRamp
-              sta     dp:.tiny _Dp
-1$:           jsr     .kbank bmRamp         ; an edge
-              cmp     dp:.tiny _Dp
-              beq     1$
-              sta     dp:.tiny _Dp
-              stz     dp:.tiny (_Dp+1)      ; the steps
-              ldx     ##0                   ; the passes
-2$:           ldy     dp:.tiny (_Dp+2)
-3$:           nop
-              nop
-              nop
-              nop
-              nop
-              nop
-              nop
-              nop
-              dey
-              bne     3$
-              inx
-              jsr     .kbank bmRamp
-              cmp     dp:.tiny _Dp
-              beq     2$
-              pha
-              sec
-              sbc     dp:.tiny _Dp
-              clc
-              adc     dp:.tiny (_Dp+1)
-              sta     dp:.tiny (_Dp+1)
-              pla
-              sta     dp:.tiny _Dp
-              lda     dp:.tiny (_Dp+1)
-              cmp     #BM_STEPS
-              bcc     2$
-              rep     #0x20
-              and     ##0x00ff              ; steps << 24 / passes
-              xba
-              sta     dp:.tiny (_Dp+2)
-              stz     dp:.tiny _Dp
-              stx     dp:.tiny (_Dp+4)
-              stz     dp:.tiny (_Dp+6)
-              jsl     long:_UDivMod32
-              rts
-
-;;; bmRamp: A = the data register of the timer oscillator (readRamp of
-;;; src/iigs/i_doc65.s). 8-bit A.
-SOUNDCTL      .equ    0xe0c03c
-SOUNDDATA     .equ    0xe0c03d
-SOUNDADRL     .equ    0xe0c03e
-DOCVOL        .equ    0xff            ; the volume for SOUNDCTL: $09FF of the direct page
-bmRamp:       lda     long:SOUNDCTL
-              bmi     bmRamp
-              lda     dp:DOCVOL
-              sta     long:SOUNDCTL
-              lda     #(0x60 + 31)          ; (TIMER_OSC)
-              sta     long:SOUNDADRL
-              lda     long:SOUNDDATA        ; Dummy read starts the DOC access.
-              lda     long:SOUNDDATA
-              rts
-
-;;; bmUnlock: the four unlock writes of a ZipGS (8-bit A).
+;;; bmUnlock: four byte writes unlock the ZipGS registers.
 bmUnlock:     lda     #0x5a
               sta     long:ZIPLOCK
               sta     long:ZIPLOCK
@@ -2513,6 +2446,11 @@ bmDone:       lda     long:VW_BENCH
               jsr     .kbank bmFrac
               jsr     .kbank uiNewline
               lda     long:VW_BACC
+              and     ##4
+              beq     101$
+              lda     ##.word0 txBAs
+              bra     41$
+101$: lda     long:VW_BACC
               and     ##2
               bne     4$
               lda     long:VW_BACC
@@ -2554,6 +2492,14 @@ bmDone:       lda     long:VW_BENCH
               and     ##0x00ff
               ldx     ##0
               jsr     .kbank bmNum
+              lda     long:VW_BACC
+              and     ##4
+              beq     7$
+              jsr     .kbank uiNewline
+              lda     long:VW_BCORE
+              ldx     ##0
+              jsr     .kbank bmNum
+7$:
               pla
               sta     dp:.tiny (_Dp+10)
               pla
@@ -3075,6 +3021,8 @@ uiMessage:    jsl     long:I_MenuPalette
               cmp     ##MSG_BENCH
               beq     uiBenchmark
               jmp     long:uiMessageText
+;;; bmDone appends CORE only when VW_BACC & 4 is nonzero. Use the same test
+;;; for the sixth label so the label and newline-delimited value rows match.
 uiBenchmark: pei     dp:.tiny (_Dp+8)
               pei     dp:.tiny (_Dp+10)
               lda     ##24
@@ -3118,6 +3066,11 @@ uiBenchmark: pei     dp:.tiny (_Dp+8)
               sta     long:UI_ITEM
               cmp     ##10
               bcc     1$
+              bne     2$
+              lda     long:VW_BACC
+              and     ##4
+              bne     1$                    ; AppleSqueezer has a sixth, CORE row.
+2$:
               pla
               sta     dp:.tiny (_Dp+10)
               pla
@@ -3125,11 +3078,12 @@ uiBenchmark: pei     dp:.tiny (_Dp+8)
               rtl
 uiBenchTitle: .asciz  "BENCHMARK: DEMO3"
 uiBenchLabels: .word   .word0 uiLView, .word0 uiLFps, .word0 uiLCpu
-              .word   .word0 uiLCache, .word0 uiLRom
+              .word   .word0 uiLCache, .word0 uiLRom, .word0 uiLCore
 uiLFps:       .asciz  "FPS:"
 uiLCpu:       .asciz  "CPU"
 uiLCache:     .asciz  "CACHE"
 uiLRom:       .asciz  "ROM"
+uiLCore:      .asciz  "CORE"
 
 ;;; Menu counts, item offsets, layout and parent selections. menuItems gives
 ;;; byte offsets into the parallel item tables; keep routine, status, label
@@ -3221,3 +3175,136 @@ menuDraw:     .word   .word0 drawMain, .word0 drawNewGame, .word0 drawLoad
               .word   .word0 drawOptions, .word0 drawOptions, .word0 drawOptions
 
 #include "j13label.inc"
+
+              .section speedcode, text
+;;; A/X/Y16 in; P restored. Both measurements run with IRQs masked because
+;;; they share the DOC ports. _Dp[0..7] hold measurement/division operands;
+;;; A/X/Y are scratch. VW_BQ holds the first Q = 2^24 * ramp steps / passes.
+;;; A nonpositive delta Q produces VW_BKHZ = 0. The AppleSqueezer ratio
+;;; rescales numerator and denominator to keep the numerator within 32 bits.
+bmClockMeasure:
+              php
+              sei
+              lda     long:VW_BACC
+              and     ##4
+              beq     101$
+              lda     ##256
+              bra     102$
+101$:
+              lda     ##8
+102$:
+              jsr     .kbank bmPasses
+              sta     long:VW_BQ
+              txa
+              sta     long:(VW_BQ+2)
+              lda     long:VW_BACC
+              and     ##4
+              beq     103$
+              lda     ##768
+              bra     104$
+103$:
+              lda     ##40
+104$:
+              jsr     .kbank bmPasses
+              sec                           ; delta Q = longer pass - shorter pass
+              sbc     long:VW_BQ
+              sta     dp:.tiny (_Dp+4)
+              txa
+              sbc     long:(VW_BQ+2)
+              sta     dp:.tiny (_Dp+6)
+              bmi     8$
+              ora     dp:.tiny (_Dp+4)
+              beq     8$
+              lda     long:VW_BACC
+              and     ##4
+              beq     105$
+              lsr     dp:.tiny (_Dp+6)
+              ror     dp:.tiny (_Dp+4)
+              lsr     dp:.tiny (_Dp+6)
+              ror     dp:.tiny (_Dp+4)
+              lda     ##(BM_AS_KHZ & 0xffff)
+              sta     dp:.tiny _Dp
+              lda     ##(BM_AS_KHZ >> 16)
+              bra     106$
+105$:
+              lda     ##(BM_KHZ & 0xffff)
+              sta     dp:.tiny _Dp
+              lda     ##(BM_KHZ >> 16)
+106$:
+              sta     dp:.tiny (_Dp+2)
+              jsl     long:_UDivMod32
+              bra     9$
+8$:           lda     ##0                   ; (no result)
+9$:           sta     long:VW_BKHZ
+              plp
+              rtl
+
+;;; bmPasses: A16 = inner iterations per pass. Start at a ramp edge and
+;;; count passes until at least BM_STEPS ramp steps have elapsed. Return
+;;; X:A = floor((steps << 24) / passes), using the actual observed steps.
+;;; Eight NOPs, DEY and a taken BNE cost 21 cycles per inner iteration;
+;;; the final untaken branch is common to both measurements.
+;;; The ramp is 1..255 with another 255 in place of 0. Summing byte-wrapped
+;;; differences includes that hidden step when the next value arrives.
+bmPasses:     sta     dp:.tiny (_Dp+2)      ; the count of a pass
+              sep     #0x20
+              jsr     .kbank bmRamp
+              sta     dp:.tiny _Dp
+1$:           jsr     .kbank bmRamp         ; an edge
+              cmp     dp:.tiny _Dp
+              beq     1$
+              sta     dp:.tiny _Dp
+              stz     dp:.tiny (_Dp+1)      ; the steps
+              ldx     ##0                   ; the passes
+2$:           ldy     dp:.tiny (_Dp+2)
+3$:           nop
+              nop
+              nop
+              nop
+              nop
+              nop
+              nop
+              nop
+              dey
+              bne     3$
+              inx
+              jsr     .kbank bmRamp
+              cmp     dp:.tiny _Dp
+              beq     2$
+              pha
+              sec
+              sbc     dp:.tiny _Dp
+              clc
+              adc     dp:.tiny (_Dp+1)
+              sta     dp:.tiny (_Dp+1)
+              pla
+              sta     dp:.tiny _Dp
+              lda     dp:.tiny (_Dp+1)
+              cmp     #BM_STEPS
+              bcc     2$
+              rep     #0x20
+              and     ##0x00ff              ; steps << 24 / passes
+              xba
+              sta     dp:.tiny (_Dp+2)
+              stz     dp:.tiny _Dp
+              stx     dp:.tiny (_Dp+4)
+              stz     dp:.tiny (_Dp+6)
+              jsl     long:_UDivMod32
+              rts
+
+;;; bmRamp: A8 in/out, game direct page selected and IRQs already masked.
+;;; Read oscillator 31's data byte using the same two-read sequence as
+;;; readRamp in i_doc65.s; X/Y are kept for the measurement loop.
+SOUNDCTL      .equ    0xe0c03c
+SOUNDDATA     .equ    0xe0c03d
+SOUNDADRL     .equ    0xe0c03e
+DOCVOL        .equ    0xff            ; cached volume nibble at D+$FF ($09FF)
+bmRamp:       lda     long:SOUNDCTL
+              bmi     bmRamp
+              lda     dp:DOCVOL
+              sta     long:SOUNDCTL
+              lda     #(0x60 + 31)          ; (TIMER_OSC)
+              sta     long:SOUNDADRL
+              lda     long:SOUNDDATA        ; Dummy read starts the DOC access.
+              lda     long:SOUNDDATA
+              rts

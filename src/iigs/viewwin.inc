@@ -47,10 +47,11 @@ VW_FVSIZE     .equ    21              ; the byte of VW_SIZE in the settings file
 ;;; The benchmark (bmStart of src/iigs/m_menu65.s).
 VW_BENCH      .equ    (MM_BV + 0xb82c) ; VW_BENCHTAG while it runs
 VW_BENCHTAG   .equ    0xb3c7          ;   (the RAM at start never matches)
-VW_BKHZ       .equ    (MM_BV + 0xb82e) ; the CPU clock in kHz (bmClock)
+VW_BKHZ       .equ    (MM_BV + 0xb82e) ; measured CPU kHz; 0 if bmClock has no result
 VW_BACC       .equ    (MM_BV + 0xb830) ; the accelerator: + 1 a ZipGS, + 2 a
-                                      ;   TransWarp GS (bmAccel)
-VW_BQ         .equ    (MM_BV + 0xb834) ; 4: bmClock: the pass time of loop A
+                                      ;   TransWarp GS, + 4 an AppleSqueezer (bmAccel)
+VW_BCORE      .equ    (MM_BV + 0xb832) ; zero-extended core byte; valid when VW_BACC & 4
+VW_BQ         .equ    (MM_BV + 0xb834) ; 4 bytes: short-loop ramp steps/pass, scaled by 2^24
 VW_BP         .equ    (MM_BV + 0xb83a) ; the end of the text (an offset)
 VW_BN         .equ    (MM_BV + 0xb83c) ; 4: a number of the text
 VW_BRT        .equ    (MM_BV + 0xb840) ; 4: the realtics
