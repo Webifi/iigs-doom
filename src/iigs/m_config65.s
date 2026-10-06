@@ -6,10 +6,10 @@
 ;;;
 ;;; The file, one block:
 ;;;   0    "DOOMSET"
-;;;   7    the version, 1
+;;;   7    the version, 2; version 1 mouse speeds are converted on load
 ;;;   8    the sum of the bytes 12-511, 16 bits
 ;;;   12   gamma 0-4, always run, messages, the sound effect volume 0-15,
-;;;        the music volume 0-15, the mouse, the mouse speed 0-9, the mouse
+;;;        the music volume 0-15, the mouse, the mouse speed 0-15, the mouse
 ;;;        moves, the detail (0 high, 1 low), the view size (VW_SIZE), the
 ;;;        TWGS SLOW IRQ (VW_TWIRQ: 0 OFF, 1 CARD; 0 in older files)
 ;;;        J13 gameplay input (0 OFF, 1 ON; 0 in older files),
@@ -27,6 +27,7 @@
 
               .extern _Dp, _g_gamma, _g_alwaysRun, showMessages
               .extern iigs_mouseon, iigs_mousespeed, iigs_mousemove, detailLevel
+              .extern GG_T
               .extern R_SetDetail, J13SettingsInit, J13SettingsCollect
               .extern solidLoad, solidCollect
               .extern snd_SfxVolume, snd_MusicVolume, S_SetSfxVolume, S_SetMusicVolume
@@ -63,7 +64,7 @@ F_MMOVE       .equ    19
 F_DETAIL      .equ    20
 F_TWIRQ       .equ    22              ; (21 is VW_FVSIZE)
 F_KEYS        .equ    32
-VERSION       .equ    1
+VERSION       .equ    2               ; Version 1 remains readable.
 NOKEY         .equ    0xff            ; keyTable: no Doom key
 ADB_KEYS      .equ    128
 
@@ -124,8 +125,11 @@ I_InitSettings:
               rtl
 
 ;;; ---------------------------------------------------------------------------
-;;; G_LoadSettings: validate and clamp stored settings; otherwise keep
-;;; the defaults and clear save slots. No disk write here.
+;;; G_LoadSettings: validate/clamp stored settings and convert version-1
+;;; mouse speed to the current step. Invalid files retain defaults and
+;;; clear save slots. collect normalizes the in-memory file to VERSION;
+;;; settingsKnown receives the same bytes, so loading alone is not dirty.
+;;; Disk writes occur only through the save path.
 ;;; ---------------------------------------------------------------------------
               .public G_LoadSettings, G_RememberSettings
 G_LoadSettings:
@@ -151,10 +155,20 @@ G_LoadSettings:
               lda     long:(settingsFile+F_MOUSE)
               jsr     .kbank flag
               sta     .near iigs_mouseon
-              lda     long:(settingsFile+F_MSPEED)
-              ldx     ##9
+              lda     long:(settingsFile+F_VERSION)
+              and     ##0x00ff
+              ldx     ##15                  ; Version 2 stores a 0-15 step.
+              cmp     ##1
+              bne     4$
+              ldx     ##9                   ; Version 1 indexes msMap after clamping.
+4$:           lda     long:(settingsFile+F_MSPEED)
               jsr     .kbank inRange
-              sta     .near iigs_mousespeed
+              cpx     ##9
+              bne     5$
+              tax
+              lda     long:msMap,x
+              and     ##0x00ff
+5$:           sta     .near iigs_mousespeed
               lda     long:(settingsFile+F_MMOVE)
               jsr     .kbank flag
               sta     .near iigs_mousemove
@@ -191,7 +205,7 @@ G_LoadSettings:
               cpx     ##ADB_KEYS
               bcc     2$
 9$:           jsl     long:solidLoad
-              jsr     .kbank collect        ; the file now; the disk has it
+              jsr     .kbank collect        ; normalize the in-memory file
 ;;; Also used after uiLoadSettings normalizes an old view setting.
 G_RememberSettings:
               ldx     ##FILE_SIZE - 2
@@ -202,7 +216,7 @@ G_RememberSettings:
               bpl     10$
               rtl
 
-;;; inRange: C = the byte C, or X if it is more than X.
+;;; inRange: A16 = min(low byte of A, X). Keep X as the limit; CF_I is scratch.
 inRange:      and     ##0x00ff
               stx     .near CF_I
               cmp     .near CF_I
@@ -217,8 +231,8 @@ flag:         and     ##0x00ff
               lda     ##1
 1$:           rts
 
-;;; checkFile: carry clear if settingsFile has the magic, the version and
-;;; the sum.
+;;; checkFile: carry clear for matching magic, version 1 or 2, and checksum.
+;;; Validation leaves the stored version intact for G_LoadSettings to convert.
 checkFile:    ldx     ##0
 1$:           lda     long:settingsFile,x
               and     ##0x00ff
@@ -232,8 +246,9 @@ checkFile:    ldx     ##0
               bcc     1$
               lda     long:(settingsFile+F_VERSION)
               and     ##0x00ff
+              dec     a                     ; Accept versions 1 and 2 only.
               cmp     ##VERSION
-              bne     8$
+              bcs     8$
               jsr     .kbank fileSum
               cmp     long:(settingsFile+F_SUM)
               bne     8$
@@ -361,8 +376,34 @@ G_SaveUndo:   ldx     ##FILE_SIZE - 2
               jsr     .kbank collect
               rtl
 
-;;; Keep coldcode offsets after moving writeFile to vwcode.
-              .space  91
+;;; Sixteen turn gains, indexed by 2 * iigs_mousespeed. Each word is angle
+;;; units per mouse count; 65536 units make a revolution. The calibration
+;;; reference is 100 counts/inch: about 12.1..2.6 inches per half turn,
+;;; with step 4 near 8 inches. Actual distance depends on the input device.
+              .public mouseTurn, mouseMoveScale
+mouseTurn:    .word   27, 30, 33, 37, 41, 45, 50, 55
+              .word   61, 68, 75, 84, 93, 103, 114, 126
+
+;;; Version 1 stores speed 0..9 with gain 15 + 3 * speed. Map to the
+;;; closest half-turn distance in mouseTurn; gains below its range map to 0.
+msMap:        .byte   0, 0, 0, 0, 0, 1, 2, 3, 4, 4
+
+;;; A16 = signed mouse count, GG_T = turn gain. Preserve A and cap GG_T
+;;; at 42 before mouseMovePart multiplies and divides by 16. This bounds
+;;; movement independently of the faster turn settings. Reapplying the cap
+;;; for vertical movement after horizontal strafing leaves it unchanged.
+mouseMoveScale:
+              pha
+              lda     .near GG_T
+              cmp     ##42
+              bcc     1$
+              lda     ##42
+              sta     .near GG_T
+1$:           pla
+              rtl
+
+;;; Preserve the following coldcode addresses and their cache placement.
+              .space  3
 
 ;;; ---------------------------------------------------------------------------
 ;;; Slot firmware needs bank 0 code, D = 0, emulation mode and page-1 S.

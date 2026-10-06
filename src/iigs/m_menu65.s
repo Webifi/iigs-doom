@@ -109,7 +109,7 @@ showMessages: .word   1
 detailLevel:  .word   0               ; the textures: 0 high detail, 1 low
                                       ; (half the rows, R_SetDetail)
 iigs_mouseon: .word   1               ; the mouse turns and fires
-iigs_mousespeed: .word 5              ; 0-9
+iigs_mousespeed: .word 4              ; 0-15; 41 angle units per mouse count
 iigs_mousemove: .word 0               ; the mouse moves forward and back
 
               .section znear, bss
@@ -1057,14 +1057,14 @@ changeJ13:    jsl     long:J13Toggle
 vwItem:       jsl     long:bmItem           ; BENCHMARK, SAVE SETTINGS
               rts
 changeMouseSpeed:
-              cmp     ##0                   ; the mouse speed 0-9
+              cmp     ##0                   ; the mouse speed 0-15
               bne     1$
               lda     .near iigs_mousespeed
               beq     2$
               dec     .near iigs_mousespeed
               rts
 1$:           lda     .near iigs_mousespeed
-              cmp     ##9
+              cmp     ##15
               bcs     2$
               inc     .near iigs_mousespeed
 2$:           rts
@@ -3013,7 +3013,7 @@ uiSettings:   pei     dp:.tiny (_Dp+8)
               bra     2$
               .space  4               ; Keep later uicode entries fixed.
 5$:           lda     long:UI_VALUE
-              cpx     ##36
+              cpx     ##32                  ; Mouse speed and volumes use 0-15.
               bcs     51$
               tax
               lda     long:UI_KIND
@@ -3065,6 +3065,8 @@ uiOn:         .asciz  "ON"
 uiCard:       .asciz  "CARD"
 
 uiGammaPos:   .byte   0, 4, 8, 11, 15
+;;; The 0..15 mouse slider bypasses this table. Keep its ten-byte extent
+;;; because following uicode entries have fixed placement.
 uiMousePos:   .byte   0, 2, 3, 5, 7, 8, 10, 12, 13, 15
 
 ;;; A message and the result share the menu palette, but have their own layout.

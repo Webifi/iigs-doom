@@ -26,6 +26,7 @@
               .extern wipegamestate, automapmode, _g_menuactive, _g_leveltime
               .extern _g_alwaysRun, _g_savegamestrings
               .extern iigs_mousedx, iigs_mousedy, iigs_mousespeed, iigs_mousemove
+              .extern mouseTurn, mouseMoveScale
               .extern maxammo, settingsFile
 
 PL            .equ    _g_player
@@ -158,6 +159,7 @@ GB_SPEED:     .space  2
 GB_TURN:      .space  2
 GB_FORWARD:   .space  2
 GB_SIDE:      .space  2
+              .public GG_T
 GG_T:         .space  4
 GG_U:         .space  4
 GG_I:         .space  2
@@ -396,27 +398,30 @@ weaponKey:    ldx     ##0
 4$:           lda     ##CONST_WP_FIST
 9$:           rts
 
-;;; mouseMoves: the mouse moves since the last tic command. X turns (with
-;;; the strafe key: side moves), Y moves forward and back when
-;;; iigs_mousemove is set. A count turns 15 + 3 * iigs_mousespeed (0.08 to
-;;; 0.23 degrees); a move is 1/16 of that, near the 2 per count of Doom.
+;;; Consume and clear both mouse deltas once per tic command. Horizontal
+;;; counts turn unless the strafe action is held; vertical counts move
+;;; forward/back only when iigs_mousemove is set. Clear disabled Y movement
+;;; too, so enabling it cannot replay accumulated motion.
+;;; Turning uses mouseTurn[speed] angle units per count (speed 0..15).
+;;; Movement uses min(turn gain, 42) / 16 command units per count. Turning
+;;; must precede movement: mouseMoveScale caps the shared gain in GG_T.
 mouseMoves:   lda     .near iigs_mousespeed
               asl     a
-              adc     .near iigs_mousespeed
-              adc     ##15
+              tax
+              lda     long:mouseTurn,x
               sta     .near GG_T
               lda     .near iigs_mousedx
               stz     .near iigs_mousedx
-              jsr     .kbank mouseScale
-              beq     2$
               ldx     .near (gamekeydown+2*KEY_STRAFE)
               bne     1$
+              jsr     .kbank mouseScale
+              beq     2$
               eor     ##0xffff              ; angleturn -= C
               sec
               adc     .near (netcmd+OFS_TC_ANGLETURN)
               sta     .near (netcmd+OFS_TC_ANGLETURN)
               bra     2$
-1$:           jsr     .kbank shr4           ; side += C / 16
+1$:           jsr     .kbank mouseMovePart  ; side += scaled horizontal movement
               clc
               adc     .near GB_SIDE
               sta     .near GB_SIDE
@@ -424,15 +429,16 @@ mouseMoves:   lda     .near iigs_mousespeed
               stz     .near iigs_mousedy
               ldx     .near iigs_mousemove
               beq     3$
-              jsr     .kbank mouseScale
-              jsr     .kbank shr4           ; forward -= C / 16 (down is
+              jsr     .kbank mouseMovePart  ; forward -= scaled movement (down is
               eor     ##0xffff              ;   positive)
               sec
               adc     .near GB_FORWARD
               sta     .near GB_FORWARD
 3$:           rts
 
-;;; mouseScale: C = C (limited to -700..700) * GG_T. Z: C is 0.
+;;; mouseScale: A = low 16 bits of clamp(A, -700, 700) * GG_T; Z if zero.
+;;; Angle commands wrap modulo 65536. Movement caps GG_T at 42 first,
+;;; keeping the signed product within -29400..29400 before division.
 mouseScale:   cmp     ##0x8000
               bcs     1$
               cmp     ##701
@@ -447,6 +453,11 @@ mouseScale:   cmp     ##0x8000
               cmp     ##0
               rts
 
+;;; mouseMovePart: signed count in A16 -> movement command units in A16.
+;;; Cap GG_T, clamp/multiply the count, then fall through to shr4. Arithmetic
+;;; shifting rounds negative products toward minus infinity.
+mouseMovePart: jsl    long:mouseMoveScale
+              jsr     .kbank mouseScale
 ;;; shr4: C = C >> 4, arithmetic.
 shr4:         cmp     ##0x8000
               ror     a
@@ -626,7 +637,7 @@ G_Ticker:     lda     .near _g_gametic
               bne     11$
               jmp     long:D_PageTicker
 11$:          rtl
-              .space  7                     ; Keep later farcode in its slots.
+              .space  4                     ; Keep later farcode in its slots.
 
 actions:      .word   .word0 loadLevel, .word0 doNewGame, .word0 doLoadGame
               .word   .word0 doSaveGame, .word0 doPlayDemo, .word0 doCompleted
