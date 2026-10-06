@@ -362,14 +362,14 @@ subSide:      eor     ##0xffff
               sta     .near GB_SIDE
               rts
 
-;;; playerArg: _Dp[0-3] = &_g_player. C stays.
-playerArg:    pha
-              lda     ##.near PL
-              sta     dp:.tiny _Dp
-              lda     ##.word2 PL
-              sta     dp:.tiny (_Dp+2)
-              pla
+;;; playerArg: store the far player pointer in _Dp[0..3]. A16 is preserved;
+;;; X16 is scratch at both weapon-selection call sites. Flags are not kept.
+playerArg:    ldx     ##.near PL
+              stx     dp:.tiny _Dp
+              ldx     ##.word2 PL
+              stx     dp:.tiny (_Dp+2)
               rts
+              .space  (13 - (. - playerArg)) ; retain following cache slots
 
 ;;; weaponKey: C = the weapon of the first number key that is down, else
 ;;; wp_nochange. Key 1 is the chainsaw when the player has it, but not when
