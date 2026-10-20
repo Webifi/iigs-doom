@@ -38,3 +38,7 @@ Get the [disk images](https://github.com/Webifi/iigs-doom/releases/latest).
 # Want it to play faster?
 
 Niek van Suchtelen's [AppleSqueezer GS](https://www.applesqueezer.com/) accelerator makes it more playable.
+
+# What is the project status?
+
+I'm no longer actively developing this and have indefinitely paused any other IIGS development.
